@@ -218,6 +218,14 @@ function renderOwnedBrowser(){
   $('diagnostic-export').disabled=sending||owned.starting||!owned.running;
   $('connect-browser').disabled=state.busy||sending||owned.running||owned.starting;
 }
+function renderRecorder(){
+  const recorder=state.recorder||{active:false};
+  const owned=state.browser?.owned||{};
+  $('recorder-status').textContent=recorder.active?`Запись идёт: ${recorder.name} · с ${new Date(recorder.startedAt).toLocaleTimeString('ru-RU')}. Выполните сценарий вручную в окне Real.`:'Запись не запущена.';
+  $('recorder-name').disabled=recorder.active||state.busy||sending;
+  $('recorder-start').disabled=recorder.active||state.busy||sending||!state.browser?.connected||!state.browser?.loggedIn||owned.starting;
+  $('recorder-stop').disabled=!recorder.active||sending;
+}
 function render() {
   $('browser-status').textContent=state.browser?.mode==='owned'?'Выбран служебный браузер. Helium не используется.':state.browser?.connected?'Подключён · действия выполняются в обычной вкладке Real':state.browser?.version?'Обновите расширение до версии 0.3.9 и подключите заново':'Расширение не подключено';
   for (const id of selected) if (!connectedAccounts().some(a => a.id === id)) selected.delete(id);
@@ -232,6 +240,7 @@ function render() {
   $('connection-dot').classList.toggle('connected',!!state.browser?.connected);
   $('connection-label').textContent=state.browser?.connected?(state.browser.mode==='owned'?'Браузер бота подключён':'Helium подключён'):'Нет подключения';
   renderOwnedBrowser();
+  renderRecorder();
   $('run-state').textContent=state.busy?'Задача выполняется':sending?'Отправка…':'Ожидание';
   $('run-state').classList.toggle('busy',state.busy||sending);
   const labels = { queued: 'В очереди', running: 'Выполняется', success: 'Готово', error: 'Ошибка', uncertain: 'Неизвестно', warning: 'Предупреждения', cancelled: 'Отменено' };
@@ -384,6 +393,26 @@ async function controlOwned(action,extra={}){
 $('owned-start').addEventListener('click',()=>controlOwned('visible'));
 $('owned-login').addEventListener('click',()=>controlOwned('visible'));
 $('owned-stop').addEventListener('click',()=>controlOwned('stop'));
+$('recorder-start').addEventListener('click',async()=>{
+  if(sending||state.busy||state.recorder?.active)return;
+  const name=$('recorder-name').value.trim();if(!name){notice('Введите название сценария.',true);return;}
+  sending=true;render();
+  try{await api('recorder/start',{name});notice('Запись началась. Перейдите в окно Real и вручную выполните только нужный сценарий.');}
+  catch(error){notice(error.message,true);}
+  finally{sending=false;await sync();}
+});
+$('recorder-stop').addEventListener('click',async()=>{
+  if(sending||!state.recorder?.active)return;
+  sending=true;render();
+  try{
+    const response=await fetch('/api/recorder/stop',{method:'POST',headers:{'x-local-token':token,'content-type':'application/json'},body:'{}'});
+    if(!response.ok)throw new Error((await response.json()).error||'Не удалось завершить запись.');
+    const disposition=response.headers.get('content-disposition')||'',match=disposition.match(/filename="([^"]+)"/i);
+    const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=match?.[1]||('real-manager-scenario-'+Date.now()+'.zip');link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+    notice('Сценарий записан и сохранён в ZIP. Перед отправкой можно открыть scenario.json и проверить содержимое.');
+  }catch(error){notice(error.message,true);}
+  finally{sending=false;await sync();}
+});
 $('diagnostic-export').addEventListener('click',async()=>{
   if(sending)return;sending=true;render();
   try{const response=await fetch('/api/owned-diagnostics',{method:'POST',headers:{'x-local-token':token,'content-type':'application/json'},body:'{}'});
