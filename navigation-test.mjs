@@ -84,6 +84,16 @@ test('scenario recorder captures manual clicks without field values',async()=>{
   assert.equal(stop.ok,true);assert.equal(stop.snapshot.scenario.name,'apply-booster');assert.equal(stop.snapshot.scenario.events.length,1);
   assert.equal(Object.hasOwn(stop.snapshot.scenario.events[0].target,'value'),false);
 });
+test('image avatar URL cannot bypass Settings username verification',async()=>{
+  const page=letterAvatarPage('other',async(c,ui)=>({id:await ui.accountId(c)}),({nav})=>{
+    const profile=nav.children.find(e=>e.innerText==='o');
+    const image=profile.add(new Element('IMG',{x:440,y:445,width:28,height:28}));
+    image.src='https://media.realapp.com/user-o_avatar.png';
+  });
+  const result=await page.message({type:'EXECUTE',command:{id:'misleading-avatar',action:'check',accountId:'user-o',accountName:'fixture_user'}});
+  assert.equal(result.snapshot.id,null);
+  assert.equal(page.settings.hidden,false);
+});
 test('same initial is never accepted as account identity',async()=>{
   const page=letterAvatarPage('other',async(c,ui)=>({id:await ui.accountId(c)}));
   const result=await page.message({type:'EXECUTE',command:{id:'wrong-name',action:'check',accountId:'user-o',accountName:'fixture_user'}});
