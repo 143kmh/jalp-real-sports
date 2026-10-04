@@ -92,7 +92,7 @@ async function poll(){
       let delivered=false;executingCommand=command;nativeAttention=null;
       const previousDiscardable=tab.autoDiscardable;
       const {attempted=[]}=await chrome.storage.session.get('attempted');
-      if(attempted.includes(command.id))result={ok:false,uncertain:['open','list'].includes(command.action),message:'Команда уже выполнялась. Проверьте результат в Real.'};
+      if(attempted.includes(command.id))result={ok:false,uncertain:['open','list','boost'].includes(command.action),message:'Команда уже выполнялась. Проверьте результат в Real.'};
       else try{
         if(!['reset','prepare-account'].includes(command.action))await ensureReady(tab.id,command.action!=='list');
         if(command.expiresAt<=Date.now())throw new Error('Команда устарела; действие не отправлено.');
@@ -123,7 +123,7 @@ async function poll(){
           result={...result,recoveryAttempted:true};
         }
       }
-      catch(error){result={ok:false,uncertain:delivered&&['open','list'].includes(command.action),requiresAttention:Boolean(error.requiresAttention),message:delivered&&['open','list'].includes(command.action)?'Вкладка не ответила. Результат открытия / листинга неизвестен.':error.message||'Real не готов.'};}
+      catch(error){result={ok:false,uncertain:delivered&&['open','list','boost'].includes(command.action),requiresAttention:Boolean(error.requiresAttention),message:delivered&&['open','list','boost'].includes(command.action)?'Вкладка не ответила. Результат действия неизвестен.':error.message||'Real не готов.'};}
       finally{if(nativeAttention)result={...result,ok:false,requiresAttention:true,message:nativeAttention};executingCommand=null;if(previousDiscardable!==undefined)try{await chrome.tabs.update(tab.id,{autoDiscardable:previousDiscardable});}catch{}}
       await chrome.storage.session.set({reports:[{commandId:command.id,result}]});
       await api('result',{commandId:command.id,result});
@@ -135,11 +135,11 @@ async function poll(){
 }
 chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name==='real-manager-poll'){api('heartbeat',{}).catch(()=>{});poll();}});
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
-  if(['AUTHORIZE_PURCHASE','AUTHORIZE_LISTING'].includes(message.type)){
+  if(['AUTHORIZE_PURCHASE','AUTHORIZE_LISTING','AUTHORIZE_BOOSTER'].includes(message.type)){
     (async()=>{
       const {realTabId}=await chrome.storage.session.get('realTabId');
       if(sender.id!==chrome.runtime.id||sender.tab?.id!==realTabId||!/^https:\/\/(www\.)?realsports\.io\//.test(sender.url||''))throw new Error('Неизвестная вкладка Real.');
-      return api(message.type==='AUTHORIZE_LISTING'?'authorize-listing':'authorize',{commandId:message.commandId});
+      return api(message.type==='AUTHORIZE_LISTING'?'authorize-listing':message.type==='AUTHORIZE_BOOSTER'?'authorize-booster':'authorize',{commandId:message.commandId});
     })().then(respond,e=>respond({ok:false,error:e.message,requiresAttention:Boolean(e.requiresAttention)}));return true;
   }
   if(!sender.url?.startsWith(`${ORIGIN}/`))return;
@@ -168,8 +168,10 @@ chrome.webRequest.onCompleted.addListener(details=>{
     const {realTabId,token}=await chrome.storage.session.get(['realTabId','token']);
     if(!token||details.tabId!==realTabId||details.type!=='xmlhttprequest')return;
     const url=new URL(details.url);url.search='';
-    if(executingCommand&&details.method==='POST'&&[401,403].includes(details.statusCode)&&
-      (executingCommand.action==='open'&&url.pathname==='/collectingpacks/'+(executingCommand.kind==='player'?'player':'general')||executingCommand.action==='list'&&['/quicklist','/quicklist/preview','/cardmarketplacelistings'].includes(url.pathname)))
+    if(executingCommand&&['POST','PUT'].includes(details.method)&&[401,403].includes(details.statusCode)&&
+      (executingCommand.action==='open'&&url.pathname==='/collectingpacks/'+(executingCommand.kind==='player'?'player':'general')||
+       executingCommand.action==='list'&&['/quicklist','/quicklist/preview','/cardmarketplacelistings'].includes(url.pathname)||
+       executingCommand.action==='boost'&&/^\/userpassboostercards\/\d+\/rarity\/[345]$/.test(url.pathname)))
       nativeAttention='Real отклонил действие ('+details.statusCode+'). Завершите ручную проверку; очередь остановлена.';
     await api('native-network',{record:{url:url.href,method:details.method,status:details.statusCode}});
     if(observed&&details.statusCode===200&&details.method==='GET')await api('native-session',{headers:observed.headers});
