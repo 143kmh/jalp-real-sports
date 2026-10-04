@@ -317,6 +317,7 @@ async function createJob(body) {
   const existing = store.jobs.find(j => j.requestId === body.requestId);
   if (existing) return existing;
   if (busy||ownedBrowser.starting) throw new Error('Дождитесь окончания текущей задачи или запуска браузера.');
+  if (scenarioRecorder.active) throw new Error('Сначала завершите запись сценария.');
   validateIds(body.accountIds);
   // Starting any job opens the owned Real window if it was closed/stopped.
   browserState.mode='owned';
@@ -433,7 +434,9 @@ const server = http.createServer(async (req, res) => {
       if(url.pathname==='/api/recorder/stop'){
         if(!scenarioRecorder.active)throw new OperationError('Запись сценария не запущена.');
         const meta={...scenarioRecorder};
-        const stopped=await browserCommand('record-stop',{name:meta.name});
+        let stopped;
+        try{stopped=await browserCommand('record-stop',{name:meta.name});}
+        catch(error){scenarioRecorder={active:false,name:null,startedAt:null};throw error;}
         scenarioRecorder={active:false,name:null,startedAt:null};
         const secrets=[token,ownedKey,...[...store.accounts.values()].flatMap(a=>Object.entries(a.headers||{}).filter(([k])=>/auth|token|cookie/i.test(k)).map(([,v])=>v))];
         const network=ownedBrowser.network.filter(record=>!meta.startedAt||Date.parse(record.at)>=Date.parse(meta.startedAt));
@@ -456,6 +459,7 @@ const server = http.createServer(async (req, res) => {
           const owned=await ownedBrowser.requestVisibility(body.visible,busy);send(res,200,{owned});return;
         }
         if(busy||shuttingDown||ownedBrowser.starting)throw new OperationError('Дождитесь завершения задачи перед управлением браузером.');
+        if(scenarioRecorder.active)throw new OperationError('Сначала завершите запись сценария.');
         if(!['visible','headless','stop','refresh','add-accounts','finish-accounts'].includes(body.action))throw new OperationError('Неверное действие браузера.');
         if(body.action==='refresh'){send(res,200,{owned:await ownedBrowser.refresh()});return;}
         if(body.action==='stop'){send(res,200,{owned:await ownedBrowser.stop()});return;}
