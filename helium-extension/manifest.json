@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Real Manager — Helium bridge",
+  "version": "0.3.9",
+  "description": "Подключает локальную панель Real Manager к обычной вкладке Real Sports.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1:5127/*", "https://realsports.io/*", "https://www.realsports.io/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["http://127.0.0.1:5127/*"], "js": ["panel.js"], "run_at": "document_idle" },
+    { "matches": ["https://realsports.io/*", "https://www.realsports.io/*"], "js": ["navigation.js", "pack-listing.js", "workflow.js", "real.js"], "run_at": "document_idle" }
+  ]
+}
