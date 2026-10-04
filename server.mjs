@@ -481,6 +481,14 @@ const server = http.createServer(async (req, res) => {
         const account=store.accounts.get(id);if(!account.seasons)throw new OperationError('Сначала обновите аккаунты.');
         send(res,200,{players:await searchPlayers(account,url.searchParams.get('sport'),url.searchParams.get('query'))});return;
       }
+      if(req.method==='GET'&&url.pathname==='/api/booster-owned'){
+        if(busy)throw new OperationError('Дождитесь текущей задачи.');
+        const id=url.searchParams.get('accountId');validateIds([id]);const sport=url.searchParams.get('sport')||null;
+        busy=true;try{
+          const players=await getOwnedBoosterPlayers(store.accounts.get(id),sport);await store.saveAccounts();send(res,200,{players});
+        }finally{busy=false;commandNotifier.notify();}
+        return;
+      }
       if (req.method !== 'POST') { send(res, 405, { error: 'Метод не поддерживается.' }); return; }
       const body = await readJson(req);
       if(url.pathname==='/api/owned-ufc'){
