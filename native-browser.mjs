@@ -40,7 +40,10 @@ export class NativeBrowser {
     try{
       if(!this.running){const executable=await this.detect();await fs.mkdir(this.profile,{recursive:true});this.windowOpen=true;
         const child=this.spawnChrome(executable,nativeArguments(this.profile,this.origin),{windowsHide:false,stdio:'ignore'});
-        child.once('exit',()=>{if(!this.connected)this.windowOpen=false;});
+        child.once('exit',()=>{
+          this.windowOpen=false;this.lastSeen=0;this.snapshot=null;
+          this.lastError='Служебный Chrome закрылся.';this.notify();
+        });
         await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref?.();
       }
       this.lastError='Один раз загрузите расширение из папки chrome-extension в этом Chrome и обновите вкладку локальной панели.';
