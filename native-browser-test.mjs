@@ -56,3 +56,9 @@ test('native extension refreshes before switch and again after switch, then veri
 test('native extension never replays an opening with a lost reply',async()=>{
   const f=await workerFixture([{id:'native-open',action:'open',expiresAt:Date.now()+60000}],()=>{throw Error('lost');});assert.equal(f.executions.length,1);assert.equal(f.requests.find(request=>request.route==='result').body.result.uncertain,true);
 });
+test('native extension never replays a booster with a lost reply',async()=>{
+  const f=await workerFixture([{id:'native-boost',action:'boost',expiresAt:Date.now()+60000}],()=>{throw Error('lost');});
+  assert.equal(f.executions.length,1);
+  assert.equal(f.requests.find(request=>request.route==='result').body.result.uncertain,true);
+});
+
