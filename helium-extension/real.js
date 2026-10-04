@@ -214,7 +214,7 @@
       }
     }
     const packImages=all('img').filter(e=>/\/assets\/packs\//.test(e.src)).map(e=>{const r=e.getBoundingClientRect();return {src:e.src,w:r.width,h:r.height,context:text(e.parentElement?.parentElement).slice(0,1500)};}).slice(0,30);
-    return {version:'0.4.4',url:location.href,loggedIn:navPresent&&!body.includes('The web app is available to Real Pro members.'),identityVerified:Boolean(id),accountId:id,accountName:identity?.name||null,lastAction,cardsPanePresent:Boolean(shop),shopText:shop?text(shop).slice(0,10000):null,shopLabels,text:body.slice(0,20000),packDetails,packImages,quickListOptions:listingUi.inspectOptions(),controls:controls.slice(0,150)};
+    return {version:'0.4.5',url:location.href,loggedIn:navPresent&&!body.includes('The web app is available to Real Pro members.'),identityVerified:Boolean(id),accountId:id,accountName:identity?.name||null,lastAction,cardsPanePresent:Boolean(shop),shopText:shop?text(shop).slice(0,10000):null,shopLabels,text:body.slice(0,20000),packDetails,packImages,quickListOptions:listingUi.inspectOptions(),controls:controls.slice(0,150)};
   }
   let scenarioRecorder=null;
   function recorderElement(element){
@@ -262,7 +262,7 @@
   const results=new Map();
   chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(sender.id!==chrome.runtime.id)return;
-    if(message.type==='READY'){let ready=false;try{sidebar();ready=document.readyState!=='loading';}catch{}const body=document.body.innerText||'';const requiresAttention=/extra verification is required|please turn off any adblock or script blockers/i.test(body)||!ready&&/sign in|log in|the web app is available to real pro members|verify you are human|checking your browser/i.test(body);respond({version:'0.4.4',ready,active,requiresAttention});return;}
+    if(message.type==='READY'){let ready=false;try{sidebar();ready=document.readyState!=='loading';}catch{}const body=document.body.innerText||'';const requiresAttention=/extra verification is required|please turn off any adblock or script blockers/i.test(body)||!ready&&/sign in|log in|the web app is available to real pro members|verify you are human|checking your browser/i.test(body);respond({version:'0.4.5',ready,active,requiresAttention});return;}
     if(message.type==='SNAPSHOT'){respond(snapshot());return;}
     if(message.type!=='EXECUTE')return;
     if(results.has(message.command.id)){respond(results.get(message.command.id));return;}
