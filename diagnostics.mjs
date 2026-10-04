@@ -22,3 +22,18 @@ export function diagnosticArchive(payload,png,secrets=[]){
   if(png)files['real-screen.png']=new Uint8Array(png);
   return zipSync(files,{level:3});
 }
+
+
+export function scenarioArchive(payload,secrets=[]){
+  const safe=scrubDiagnostics(payload,secrets);
+  const files={
+    'scenario.json':strToU8(JSON.stringify(safe,null,2)),
+    'README.txt':strToU8(
+      'Real Manager scenario recording\n'+
+      'Contains the visible Real UI states around manual actions plus network METHOD/PATH/STATUS metadata.\n'+
+      'It does NOT include request/response bodies, cookies, authorization/session headers, challenge tokens, passwords, or input values.\n'+
+      'Visible page text can contain account names, player/card names and other Real content. Review scenario.json before sharing.\n'
+    ),
+  };
+  return zipSync(files,{level:3});
+}
