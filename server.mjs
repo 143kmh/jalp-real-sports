@@ -8,7 +8,7 @@ import { Store } from './storage.mjs';
 import { CommandNotifier } from './command-notifier.mjs';
 import {validateSettings,recoverNewPack,publicCard,preparePackQuickList,runMaximum} from './automation.mjs';
 import {visitGeneral,scheduleGeneral,requiresGeneralAttention} from './general-runner.mjs';
-import {OwnedBrowser} from './owned-browser.mjs';
+import {NativeBrowser as OwnedBrowser} from './native-browser.mjs';
 import {diagnosticArchive} from './diagnostics.mjs';
 import {hasBrowserSession,requireBrowserSession,mergeBrowserAccount} from './browser-accounts.mjs';
 
@@ -21,10 +21,10 @@ await store.load();
 let busy = false;
 let shuttingDown = false;
 let worker = Promise.resolve();
-const APP_VERSION='0.4.2';
+const APP_VERSION='0.4.3';
 const ownedKey=crypto.randomBytes(32).toString('hex');
 const browserState={mode:'owned',lastSeen:0,tabId:null,snapshot:null,version:null};
-const ownedBrowser=new OwnedBrowser({root,version:APP_VERSION,onAccount:async account=>{
+const ownedBrowser=new OwnedBrowser({root,origin,version:APP_VERSION,notify:()=>commandNotifier.notify(),onAccount:async account=>{
   const previous=store.accounts.get(account.id),backup=previous?{...previous}:null;
   const merged=mergeBrowserAccount(previous,account);store.accounts.set(account.id,merged);
   try{await store.saveAccounts();}catch(error){
@@ -422,13 +422,18 @@ const server = http.createServer(async (req, res) => {
       if(url.pathname.startsWith('/api/browser/')){
         const ownedRequest=req.headers['x-owned-browser']===ownedKey;
         if(ownedRequest&&browserState.mode!=='owned')throw new OperationError('Служебный браузер больше не выбран.');
-        if(!ownedRequest&&(browserState.mode==='owned'&&(ownedBrowser.running||ownedBrowser.starting)||busy&&browserState.mode==='owned'))throw new OperationError('Работает служебный браузер. Остановите его перед подключением Helium.');
         const route=url.pathname.slice('/api/browser/'.length);
+        const nativeHello=route==='hello'&&body.native===true;
+        if(!ownedRequest&&!nativeHello&&!ownedBrowser.trusted(req.headers.origin))throw new OperationError('Подключите расширение служебного Chrome.');
+        if(!nativeHello)ownedBrowser.heartbeat();
         if(['hello','heartbeat','snapshot','next','result'].includes(route))browserState.lastSeen=Date.now();
-        if(route==='hello'){if(!ownedRequest)throw new OperationError('Добавляйте аккаунты через служебный браузер. Подключение Helium больше не используется.');browserState.mode='owned';browserState.tabId=body.tabId;browserState.version=body.version;browserState.snapshot=null;send(res,200,{ok:true});return;}
+        if(route==='hello'){if(!nativeHello)throw new OperationError('Подключите новое расширение Chrome.');ownedBrowser.acceptHello(req.headers.origin,body);browserState.mode='owned';browserState.tabId=body.tabId;browserState.version=body.version;browserState.snapshot=null;send(res,200,{ok:true});return;}
         if(route==='wake-receiver'&&ownedRequest){commandNotifier.notify();send(res,200,{ok:true});return;}
-        if(route==='heartbeat'){send(res,200,{ok:true});return;}
-        if(route==='snapshot'){browserState.snapshot=body.snapshot;send(res,200,{ok:true});return;}
+        if(route==='heartbeat'){ownedBrowser.heartbeat();send(res,200,{ok:true});return;}
+        if(route==='snapshot'){ownedBrowser.receiveSnapshot(body.snapshot);browserState.snapshot=body.snapshot;send(res,200,{ok:true});return;}
+        if(route==='native-session'){await ownedBrowser.observeSession(body.headers);send(res,200,{ok:true});return;}
+        if(route==='native-network'){ownedBrowser.recordNetwork(body.record);send(res,200,{ok:true});return;}
+        if(route==='native-closed'){ownedBrowser.closed();send(res,200,{ok:true});return;}
         if(route==='debug'){send(res,200,{snapshot:browserState.snapshot});return;}
         if(route==='next'){
           const waitMs=Math.min(20000,Math.max(0,Number(body.waitMs)||0));
@@ -436,12 +441,13 @@ const server = http.createServer(async (req, res) => {
           const disconnect=()=>controller.abort();res.once('close',disconnect);
           try{
             const result=await commandNotifier.wait(()=>{
+              if(ownedBrowser.closeWanted)return {command:{action:'native-close'},busy:false};
               if(shuttingDown||ownedRequest&&ownedBrowser.switching)return {command:null,busy:false,stopping:true};
               const pending=[...browserCommands.values()].find(p=>!p.claimed);
               if(pending){pending.claimed=true;return {command:pending.command,busy};}
-              // During preflight, hold this request until the command is actually ready.
-              // With no active job, return immediately: no permanent idle connection.
-              return busy?undefined:{command:null,busy:false};
+              // One 20-second idle receiver keeps native tasks responsive without
+              // frequent polling or waiting for Chrome's 30-second alarm.
+              return undefined;
             },waitMs,controller.signal);
             if(!res.destroyed)send(res,200,result??{command:null,busy});
           }finally{res.off('close',disconnect);controller.abort();}

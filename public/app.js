@@ -208,13 +208,13 @@ function renderSelection() {
 
 function renderOwnedBrowser(){
   const owned=state.browser?.owned||{};
-  $('owned-status').textContent=owned.manualLogin?'Обычное окно входа открыто. Войдите вручную, закройте окно и нажмите «Готово» в разделе «Аккаунты».':owned.starting?'Открывается отдельное окно Real…':owned.running?'Окно Real открыто · '+(owned.loggedIn?'Real готов':owned.error||'Ожидается вход / ручная проверка Real'):owned.error||'Окно Real откроется при запуске задачи';
+  $('owned-status').textContent=owned.extensionRequired&&owned.running?'Окно Chrome открыто · установите расширение Real Manager из '+owned.extensionPath:owned.manualLogin?'Войдите в обычном Chrome. Окно не закрывайте; нажмите «Готово» в разделе «Аккаунты».':owned.starting?'Открывается отдельное окно Real…':owned.running?'Окно Real открыто · '+(owned.loggedIn?'Real готов':owned.error||'Ожидается вход / ручная проверка Real'):owned.error||'Окно Real откроется при запуске задачи';
   $('visibility-hint').textContent='Все задачи выполняются в отдельном видимом окне Chrome. Держать Real в Helium не нужно. Не закрывайте окно Real во время задачи; при ручной проверке очередь остановится.';
   for(const id of ['owned-start','owned-login','owned-stop'])$(id).disabled=state.busy||sending||owned.starting||(id==='owned-stop'&&!owned.running);
   for(const id of ['add-account','empty-add-account','finish-accounts'])$(id).disabled=state.busy||sending||owned.starting;
   $('finish-accounts').hidden=!owned.addingAccounts;
   const captured=owned.accountCapture||{};
-  $('account-login-status').textContent=captured.error|| (owned.addingAccounts?'Войдите в один аккаунт в обычном Chrome. Закройте это окно и нажмите «Готово»: приложение подхватит вход. Для следующего аккаунта повторите добавление.':'Подключено через браузер: '+connectedAccounts().length+' из '+state.accounts.length+'.')+(captured.lastName?' Последний подтверждённый вход: '+captured.lastName+'.':'');
+  $('account-login-status').textContent=captured.error|| (owned.addingAccounts?'Войдите в один аккаунт в обычном Chrome. Не закрывайте окно; дождитесь имени и нажмите «Готово». Для следующего аккаунта используйте Switch account → Add account.':'Подключено через браузер: '+connectedAccounts().length+' из '+state.accounts.length+'.')+(captured.lastName?' Последний подтверждённый вход: '+captured.lastName+'.':'');
   $('diagnostic-export').disabled=sending||owned.starting||!owned.running;
   $('connect-browser').disabled=state.busy||sending||owned.running||owned.starting;
 }
@@ -378,7 +378,7 @@ $('finish-accounts').addEventListener('click',()=>controlOwned('finish-accounts'
 async function controlOwned(action,extra={}){
   if(sending)return;sending=true;render();
   try{const result=await api('owned-browser',{action,...extra});if(state.browser){state.browser.owned=result.owned;state.browser.mode='owned';}
-    notice(action==='add-accounts'?'Открыто обычное окно Chrome без автоматизации входа. Войдите, закройте окно и нажмите «Готово».':action==='finish-accounts'?'Аккаунт добавлен. Real работает в отдельном видимом окне. Обновите цены перед запуском.':action==='stop'?'Служебный браузер остановлен.':result.owned.loggedIn?'Служебный браузер готов. Можно запускать задачи.':'Окно Real открыто. Войдите через «Добавить аккаунты» или завершите ручную проверку сайта.');
+    notice(action==='add-accounts'?'Войдите в обычном Chrome с расширением. Не закрывайте окно; дождитесь подтверждённого имени и нажмите «Готово».':action==='finish-accounts'?'Аккаунт добавлен. Real работает в обычном Chrome. Обновите цены перед запуском.':action==='stop'?'Служебный браузер остановлен.':result.owned.extensionRequired?'Один раз установите расширение из папки chrome-extension и обновите Real и локальную вкладку подключения в этом Chrome.':result.owned.loggedIn?'Служебный браузер готов. Можно запускать задачи.':'Окно Real открыто. Завершите вход / ручную проверку сайта.');
   }catch(error){notice(error.message,true);}finally{sending=false;await sync();}
 }
 $('owned-start').addEventListener('click',()=>controlOwned('visible'));

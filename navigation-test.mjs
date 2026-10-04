@@ -73,7 +73,7 @@ test('real content adapter verifies a letter avatar by full username in Settings
   const page=letterAvatarPage('fixture_user',async(c,ui)=>({id:await ui.accountId(c)}));
   const command={id:'letter-avatar-check',action:'check',accountId:'user-o',accountName:'fixture_user'};
   const result=await page.message({type:'EXECUTE',command});assert.equal(result.snapshot.id,'user-o');assert.equal(page.settings.hidden,false);
-  const snapshot=await page.message({type:'SNAPSHOT'});assert.equal(snapshot.accountId,'user-o');assert.equal(snapshot.version,'0.4.2');
+  const snapshot=await page.message({type:'SNAPSHOT'});assert.equal(snapshot.accountId,'user-o');assert.equal(snapshot.version,'0.4.3');
 });
 test('same initial is never accepted as account identity',async()=>{
   const page=letterAvatarPage('other',async(c,ui)=>({id:await ui.accountId(c)}));
