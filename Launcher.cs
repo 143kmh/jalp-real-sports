@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 // Compiled as a Windows GUI executable: no terminal and no administrator rights.
@@ -110,7 +111,23 @@ internal static class Launcher
         if (body.IndexOf("\"app\":\"real-manager\"", StringComparison.Ordinal) < 0 ||
             body.IndexOf("\"root\":\"" + RootHash() + "\"", StringComparison.Ordinal) < 0)
             throw new Exception("На порту " + Port + " запущена другая копия приложения. Завершите её в разделе «Приложение» или используйте прежнюю папку.");
+        string expected = ExpectedVersion();
+        var runningMatch = Regex.Match(body, "\\\"version\\\":\\\"([^\\\"]+)\\\"");
+        string running = runningMatch.Success ? runningMatch.Groups[1].Value : null;
+        if (!String.IsNullOrEmpty(expected) && !String.Equals(expected, running, StringComparison.Ordinal))
+            throw new Exception("Файлы обновлены до v" + expected + ", но backend всё ещё работает как v" + (running ?? "?") + ". Полностью завершите старый Real Manager и запустите снова.");
         return true;
+    }
+
+    private static string ExpectedVersion()
+    {
+        try
+        {
+            string json = File.ReadAllText(Path.Combine(Root, "package.json"), Encoding.UTF8);
+            var match = Regex.Match(json, "\\\"version\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+            return match.Success ? match.Groups[1].Value : null;
+        }
+        catch { return null; }
     }
 
     private static string RootHash()
