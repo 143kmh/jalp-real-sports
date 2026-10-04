@@ -119,7 +119,6 @@ function validateIds(ids) {
 }
 
 async function runBoosterJob(job){
-  job.status='running';await saveJobHistory();
   let fatal=false;
   for(const item of job.items){
     if(job.cancelled||shuttingDown){item.status='cancelled';item.message='Очередь остановлена.';continue;}
@@ -127,7 +126,7 @@ async function runBoosterJob(job){
     const account=store.accounts.get(item.accountId);
     try{
       await verifyAccount(account);
-      if(!account.seasons)await getLeagueCatalog(account);
+      await getLeagueCatalog(account);
       const eligible=[],seenPlayers=new Set();
       for(const sport of BOOST_SPORTS){
         if(job.cancelled||shuttingDown||eligible.length>=job.limit)break;
