@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test.mjs browser-test.mjs navigation-test.mjs delivery-test.mjs automation-test.mjs pack-listing-test.mjs player-pack-test.mjs ui-test.mjs general-runner-test.mjs owned-browser-test.mjs browser-accounts-test.mjs distribution-test.mjs native-browser-test.mjs",
+    "test": "node --test test.mjs browser-test.mjs navigation-test.mjs delivery-test.mjs automation-test.mjs pack-listing-test.mjs player-pack-test.mjs booster-test.mjs ui-test.mjs general-runner-test.mjs owned-browser-test.mjs browser-accounts-test.mjs distribution-test.mjs native-browser-test.mjs",
     "build:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File build-windows.ps1",
     "build:portable": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File build-windows.ps1 -Portable"
   },
