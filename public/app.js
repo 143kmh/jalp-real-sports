@@ -1,7 +1,7 @@
 const token = document.querySelector('meta[name="local-token"]').content;
 const $ = id => document.getElementById(id);
 const selected = new Set();
-const UI_VERSION='0.4.4';
+const UI_VERSION='0.4.5';
 let state = { accounts: [], jobs: [], busy: false, runtimeVersion:null };
 let sport = 'nfl';
 let timer;
