@@ -66,7 +66,7 @@ function renderPlayerPacks(){
   if(!$('pp-selected').contains(document.activeElement))updateHTML('pp-selected',(settingsDraft.playerPacks||[]).map((p,i)=>p.accountId===accountId&&p.sport===league?`<div class="player-result"><span>${esc(p.name)} · ${esc(leagueName(p.sport))}</span><label>Паков <input type="number" min="1" max="100" value="${p.count}" data-pp-count="${i}" ${state.busy?'disabled':''}></label><button data-pp-remove="${i}" ${state.busy?'disabled':''}>Убрать</button></div>`:'').join('')||'<p class="empty-inline">Добавьте игроков из списка слева.</p>');
   for(const id of ['pp-owned','pp-search','pp-account','pp-sport','pp-query'])$(id).disabled=state.busy||sending||!connectedAccounts().length;
   $('pp-quote').disabled=state.busy||sending||settingsDirty||!settingsDraft.playerPacks?.some(p=>p.accountId===accountId&&p.sport===league);
-  const quoteInvalid=state.busy||sending||settingsDirty||!usableBrowser()||!ppQuote||ppQuote.expiresAt<Date.now()||ppQuote.accountId!==accountId||ppQuote.sport!==league;
+  const quoteInvalid=state.busy||sending||state.recorder?.active||settingsDirty||!usableBrowser()||!ppQuote||ppQuote.expiresAt<Date.now()||ppQuote.accountId!==accountId||ppQuote.sport!==league;
   $('pp-open').disabled=quoteInvalid||!ppQuote?.canAfford;
   $('pp-check').disabled=quoteInvalid;
 }
@@ -107,9 +107,9 @@ function canBuy(a, league = sport, strict = false) {
   if(!a.browserSession)return false;
   if(!strict&&state.settings?.generalResilience)return canMax(a);
   const p = a.packs?.[league];
-  return !settingsDirty && usableBrowser() && !state.busy && !sending && a.status === 'ready' && !a.purchaseHold && p && !p.disabled && a.balance !== null && a.balance >= p.cost;
+  return !settingsDirty && usableBrowser() && !state.busy && !sending && !state.recorder?.active && a.status === 'ready' && !a.purchaseHold && p && !p.disabled && a.balance !== null && a.balance >= p.cost;
 }
-function canMax(a){return a.browserSession===true&&!settingsDirty&&usableBrowser()&&!state.busy&&!sending&&state.settings?.priority?.length>0;}
+function canMax(a){return a.browserSession===true&&!settingsDirty&&usableBrowser()&&!state.busy&&!sending&&!state.recorder?.active&&state.settings?.priority?.length>0;}
 function editSettings(){settingsDirty=true;ppQuote=null;$('settings-status').textContent='Есть несохранённые правила. Сохраните перед запуском.';render();}
 function renderRules(){
   if(!state.settings)return;
@@ -210,7 +210,7 @@ function renderOwnedBrowser(){
   const owned=state.browser?.owned||{};
   $('owned-status').textContent=owned.extensionRequired&&owned.running?'Окно Chrome открыто · установите расширение Real Manager из '+owned.extensionPath:owned.manualLogin?'Войдите в обычном Chrome. Окно не закрывайте; нажмите «Готово» в разделе «Аккаунты».':owned.starting?'Открывается отдельное окно Real…':owned.running?'Окно Real открыто · '+(owned.loggedIn?'Real готов':owned.error||'Ожидается вход / ручная проверка Real'):owned.error||'Окно Real откроется при запуске задачи';
   $('visibility-hint').textContent='Все задачи выполняются в отдельном видимом окне Chrome. Держать Real в Helium не нужно. Не закрывайте окно Real во время задачи; при ручной проверке очередь остановится.';
-  for(const id of ['owned-start','owned-login','owned-stop'])$(id).disabled=state.busy||sending||owned.starting||(id==='owned-stop'&&!owned.running);
+  for(const id of ['owned-start','owned-login','owned-stop'])$(id).disabled=state.busy||sending||state.recorder?.active||owned.starting||(id==='owned-stop'&&!owned.running);
   for(const id of ['add-account','empty-add-account','finish-accounts'])$(id).disabled=state.busy||sending||owned.starting;
   $('finish-accounts').hidden=!owned.addingAccounts;
   const captured=owned.accountCapture||{};
@@ -235,7 +235,7 @@ function render() {
   $('balance-total').innerHTML = `${fmt(balances.reduce((sum, a) => sum + a.balance, 0))} <small>Rax</small>`;
   $('pack-count').textContent = state.jobs.reduce((sum, j) => sum + (['open','max','player'].includes(j.type)?j.items.reduce((n,i)=>n+(i.packs?.length??(i.pack?1:0)),0):0),0);
   $('empty').hidden = state.accounts.length > 0;
-  $('refresh-all').disabled = state.busy || sending || !connectedAccounts().length;
+  $('refresh-all').disabled = state.busy || sending || state.recorder?.active || !connectedAccounts().length;
   renderAccounts();renderGeneralAccounts();
   $('connection-dot').classList.toggle('connected',!!state.browser?.connected);
   $('connection-label').textContent=state.browser?.connected?(state.browser.mode==='owned'?'Браузер бота подключён':'Helium подключён'):'Нет подключения';
