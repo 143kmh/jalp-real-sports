@@ -196,6 +196,123 @@
   const listingUi=RealManagerPackListing.create({all,exact,text,clean,visible,click,wait,getSummary:()=>summaryPanel,assertContext:assertListContext,authorize:async command=>{
     const result=await chrome.runtime.sendMessage({type:'AUTHORIZE_LISTING',commandId:command.id});if(!result?.ok)throw Object.assign(new Error(result?.error||'Панель не подтвердила листинг.'),{requiresAttention:Boolean(result?.requiresAttention)});assertListContext(command);
   }});
+  function homePane(){
+    const nav=sidebar(),right=nav.root.getBoundingClientRect().x+nav.root.getBoundingClientRect().width;
+    const headers=exact('Home').filter(e=>{const r=e.getBoundingClientRect();return r.x>=right&&r.x<right+180&&r.y<110;});
+    if(headers.length!==1)return null;
+    for(let e=headers[0].parentElement;e&&e!==document.body;e=e.parentElement){
+      const r=e.getBoundingClientRect();
+      if(r.x<right-4||r.width>1000)return null;
+      if(r.width>=240&&r.height>=300)return e;
+    }
+    return null;
+  }
+  function todayRows(accountName,scope=document){
+    const pattern=/^(GENERAL|COMMON|UNCOMMON|RARE|EPIC|LEGENDARY)\s+Player\s+\S+\s+.+\s+#\d+\b/i;
+    const matches=all('div,[role="button"],button',scope).filter(e=>{
+      const value=clean(text(e));
+      return pattern.test(value)&&value.includes(' '+accountName+' ')&&/#\d+\b/.test(value);
+    });
+    return matches.filter(e=>!matches.some(child=>child!==e&&e.contains(child)));
+  }
+  function parseTodayRow(element,accountName,sport){
+    const value=clean(text(element)),mint=Number(value.match(/#(\d+)\b/)?.[1]);
+    const head=value.match(/^(GENERAL|COMMON|UNCOMMON|RARE|EPIC|LEGENDARY)\s+Player\s+(\S+)\s+(.+)$/i);
+    if(!head||!Number.isSafeInteger(mint))return null;
+    const marker=' '+accountName+' ',at=head[3].indexOf(marker);if(at<1)return null;
+    const before=head[3].slice(0,at).trim(),parts=before.split(/\s+/),position=parts.pop()||'',name=parts.join(' ').trim();
+    if(!name)return null;
+    return {sport,name,position,mint,rarity:head[1].toUpperCase(),text:value};
+  }
+  async function ensureBoostAccount(command){
+    const current=await accountId(command);
+    if(current!==command.accountId)await switchAccount(command);
+    if(await accountId(command)!==command.accountId)throw Object.assign(new Error('Real не подтвердил аккаунт для бустеров.'),{requiresAttention:true});
+  }
+  async function openHomeSport(command){
+    await ensureBoostAccount(command);
+    if(!homePane())click(sidebar().icons[1],'Home в боковой навигации');
+    const home=await wait(()=>homePane(),'Не удалось открыть Home Real.',30000);
+    const leagueLabel=command.leagueLabel||command.sport.toUpperCase();
+    const labels=exact(leagueLabel,home);
+    if(labels.length!==1)throw Object.assign(new Error('Не найден раздел '+leagueLabel+' на Home.'),{recoverable:true});
+    if(!labels[0].closest('[aria-disabled="true"],:disabled'))click(labels[0],leagueLabel+' на Home');
+    await wait(()=>exact("Today's players",home).length||clean(text(home)).includes("Today's players"),'Real не загрузил Today\'s players для '+leagueLabel+'.',30000);
+    return home;
+  }
+  async function expandedTodayRows(command){
+    const home=await openHomeSport(command);
+    let rows=todayRows(command.accountName,home);
+    const headers=exact("Today's players",home);
+    if(headers.length===1){
+      let section=headers[0].parentElement;
+      while(section&&section!==home&&section!==document.body){
+        const views=exact('View more',section);
+        if(views.length===1&&todayRows(command.accountName,section).length){click(views[0],"Today's players · View more");await pause(700);break;}
+        section=section.parentElement;
+      }
+    }
+    const expanded=await wait(()=>{
+      const found=todayRows(command.accountName);
+      return found.length>rows.length||exact('Plays today').length?found:null;
+    },'Не удалось открыть полный список Today\'s players.',8000).catch(()=>todayRows(command.accountName,home));
+    rows=expanded?.length?expanded:rows;
+    return rows;
+  }
+  async function scanBoostPlayers(command){
+    const rows=await expandedTodayRows(command),seen=new Set(),players=[];
+    for(const row of rows){
+      const parsed=parseTodayRow(row,command.accountName,command.sport);
+      if(!parsed)continue;const key=parsed.name.toLocaleLowerCase()+'#'+parsed.mint;
+      if(seen.has(key))continue;seen.add(key);players.push(parsed);
+      if(players.length>=200)break;
+    }
+    return players;
+  }
+  function boosterPanel(command){
+    const candidates=all('div,[role="dialog"]').filter(e=>{
+      const value=clean(text(e));return value.includes('Press booster to apply.')&&value.includes(command.playerName)&&(!command.mint||value.includes('#'+command.mint));
+    });
+    return candidates.sort((a,b)=>clean(text(a)).length-clean(text(b)).length)[0]||null;
+  }
+  function boosterOptions(scope){
+    const pattern=/^\d+x\s+.+\s+x\d+$/i;
+    const matches=all('div,button,[role="button"]',scope).filter(e=>pattern.test(clean(text(e))));
+    return matches.filter(e=>!matches.some(child=>child!==e&&e.contains(child)));
+  }
+  function boosterScore(value,priority){
+    const normalized=' '+String(value).toUpperCase().replace(/[^A-Z0-9]+/g,' ')+' ';let score=0;
+    (priority||[]).forEach((stat,index)=>{if(normalized.includes(' '+String(stat).toUpperCase()+' '))score=Math.max(score,1000-index*25);});
+    const qty=Number(String(value).match(/\bx(\d+)\s*$/i)?.[1]||0);return score+Math.min(qty,20);
+  }
+  async function applyBoost(command){
+    const rows=await expandedTodayRows(command);
+    const matching=rows.filter(row=>{const parsed=parseTodayRow(row,command.accountName,command.sport);return parsed&&parsed.name===command.playerName&&(!command.mint||parsed.mint===command.mint);});
+    if(matching.length!==1)throw new Error(matching.length?'Карточка игрока в Today\'s players неоднозначна.':'Игрок больше не находится в Today\'s players.');
+    click(matching[0],command.playerName+' #'+command.mint);
+    let boostPanel=await wait(()=>boosterPanel(command),'Не удалось открыть бустеры '+command.playerName+'.',20000);
+    const labels={3:'Rare',4:'Epic',5:'Legendary'},fallback=Array.isArray(command.rarityFallback)?command.rarityFallback:[5,4,3];
+    let selected=null,rarity=null;
+    for(const level of fallback){
+      const tab=exact(labels[level],boostPanel);
+      if(tab.length!==1)continue;
+      click(tab[0],labels[level]+' boosters');await pause(550);
+      boostPanel=boosterPanel(command)||boostPanel;
+      const options=boosterOptions(boostPanel).map(element=>({element,text:clean(text(element))})).filter(o=>Number(o.text.match(/\bx(\d+)\s*$/i)?.[1]||0)>0);
+      if(!options.length)continue;
+      options.sort((a,b)=>boosterScore(b.text,command.statPriority)-boosterScore(a.text,command.statPriority));
+      selected=options[0];rarity=level;break;
+    }
+    if(!selected)return {ok:true,snapshot:{applied:false,skipped:true,reason:'Нет доступных бустеров выбранной редкости или ниже.',accountId:command.accountId,sport:command.sport,playerName:command.playerName,mint:command.mint}};
+    const auth=await chrome.runtime.sendMessage({type:'AUTHORIZE_BOOSTER',commandId:command.id});
+    if(!auth?.ok)throw Object.assign(new Error(auth?.error||'Панель не подтвердила применение бустера.'),{requiresAttention:Boolean(auth?.requiresAttention)});
+    if(Date.now()>=command.expiresAt||await accountId(command)!==command.accountId)throw new Error('Аккаунт изменился перед применением бустера.');
+    click(selected.element,selected.text.slice(0,80));
+    try{await wait(()=>/Booster card applied/i.test(document.body.innerText||''),'Real не подтвердил применение бустера.',12000);}
+    catch(error){error.uncertain=true;throw error;}
+    return {ok:true,snapshot:{applied:true,accountId:command.accountId,sport:command.sport,playerName:command.playerName,mint:command.mint,rarity,rarityLabel:labels[rarity],boosterText:selected.text}};
+  }
+
   function snapshot(){
     const body=document.body.innerText;
     let id=null,navPresent=false;try{sidebar();navPresent=true;id=identity?.id||null;}catch{}
@@ -288,6 +405,11 @@
         if(await accountId(c)!==c.accountId)throw new Error('Real не подтвердил аккаунт после обновления.');
         return {ok:true,snapshot:{prepared:true,switched,accountId:c.accountId}};
       }
+      if(message.command.action==='boost-scan'){
+        const c=message.command,players=await scanBoostPlayers(c);
+        return {ok:true,snapshot:{accountId:c.accountId,sport:c.sport,players}};
+      }
+      if(message.command.action==='boost')return applyBoost(message.command);
       if(message.command.action==='availability'){
         const c=message.command;if(await accountId(c)!==c.accountId)throw new Error('Лимит проверяется не на выбранном аккаунте.');
         const result=await preparePack({...c,inspectUnavailable:true});
@@ -298,7 +420,7 @@
       if(message.command.action==='list')return RealManagerWorkflow.list(message.command,listingUi);
       if(message.command.action!=='open')return {ok:false,message:'Неизвестное действие.'};
       return RealManagerWorkflow.open(message.command,{accountId,switchAccount,preparePack,activate,authorize,purchaseOnce,revealSummary,interrupted:()=>humanInterrupted});
-    })().then(result=>{results.set(message.command.id,result);if(results.size>100)results.delete(results.keys().next().value);respond(result);},e=>respond({ok:false,uncertain:message.command.action==='open',message:e.message})).finally(()=>active=false);
+    })().then(result=>{results.set(message.command.id,result);if(results.size>100)results.delete(results.keys().next().value);respond(result);},e=>respond({ok:false,uncertain:Boolean(e.uncertain||message.command.action==='open'),recoverable:Boolean(e.recoverable),requiresAttention:Boolean(e.requiresAttention),message:e.message})).finally(()=>active=false);
     return true;
   });
 })();
