@@ -1,10 +1,10 @@
-# Real Manager — 0.4.5
+# Real Manager — 0.4.6
 
 Локальный инструмент для Windows 10/11 x64: отдельный профиль установленного Chrome, работа в отдельном окне, General / Player packs, защита карт и диагностика. Сервер доступен только на 127.0.0.1:5127. Это независимый проект, не официальный клиент Real.
 
 ## Запуск двойным кликом
 
-1. Скачайте `RealManager-0.4.5-win-x64.zip` в [Releases](https://github.com/143kmh/jalp-real-sports/releases).
+1. Скачайте `RealManager-0.4.6-win-x64.zip` в [Releases](https://github.com/143kmh/jalp-real-sports/releases).
 2. Распакуйте **весь архив** в свою доступную для записи папку, например `Documents\RealManager`. Не запускайте .exe прямо внутри ZIP.
 3. Дважды нажмите `Real Manager.exe`. Панель откроется отдельным окном Chrome, без терминала. Node.js включён в portable-сборку; отдельно устанавливать его не нужно. Google Chrome должен быть установлен.
 4. Для быстрого доступа создайте обычный ярлык этого .exe на рабочем столе.
