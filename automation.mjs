@@ -1,6 +1,7 @@
 import { LEAGUES, OperationError, realRequest, listingRequest, verifyAccount, getPackHistory } from './core.mjs';
+import {validateBoosterTargets} from './boosters.mjs';
 
-export const DEFAULT_SETTINGS=Object.freeze({priority:['nfl','ufc'],autoList:false,pricingMode:'default',maxPacks:100,generalResilience:true,generalNoLimit:true,protectedPlayers:[],protectedCardIds:[],playerPacks:[]});
+export const DEFAULT_SETTINGS=Object.freeze({priority:['nfl','ufc'],autoList:false,pricingMode:'default',maxPacks:100,generalResilience:true,generalNoLimit:true,protectedPlayers:[],protectedCardIds:[],playerPacks:[],boosterBoostAll:false,boosterUseLegendary:true,boosterTargets:[]});
 export function validateSettings(value){
   const s={...DEFAULT_SETTINGS,...value};
   if(!Array.isArray(s.priority)||!s.priority.length||new Set(s.priority).size!==s.priority.length||s.priority.some(p=>!Object.hasOwn(LEAGUES,p)))throw new OperationError('Выберите лиги без повторений.');
@@ -9,7 +10,9 @@ export function validateSettings(value){
   if(!Array.isArray(s.protectedPlayers)||s.protectedPlayers.length>5000||s.protectedPlayers.some(p=>!Object.hasOwn(LEAGUES,p.sport)||!['player','team'].includes(p.entityType)||!Number.isSafeInteger(p.id)||p.id<=0||typeof p.name!=='string'||!p.name.trim()||p.name.length>150))throw new OperationError('Неверный список защищённых игроков.');
   if(!Array.isArray(s.protectedCardIds)||s.protectedCardIds.length>1000||s.protectedCardIds.some(id=>!Number.isSafeInteger(id)||id<=0))throw new OperationError('Неверные ID защищённых карт.');
   if(!Array.isArray(s.playerPacks)||s.playerPacks.length>5000||s.playerPacks.some(p=>typeof p.accountId!=='string'||! /^[a-zA-Z0-9]+$/.test(p.accountId)||!Object.hasOwn(LEAGUES,p.sport)||p.sport==='ufc'||!Number.isSafeInteger(p.id)||p.id<=0||typeof p.name!=='string'||!p.name.trim()||p.name.length>150||!Number.isSafeInteger(p.count)||p.count<1||p.count>100)||new Set(s.playerPacks.map(p=>`${p.accountId}:${p.sport}:${p.id}`)).size!==s.playerPacks.length)throw new OperationError('Неверный список Player packs (1–100 паков на игрока).');
-  return {priority:[...s.priority],autoList:s.autoList,pricingMode:s.pricingMode,maxPacks:s.maxPacks,generalResilience:s.generalResilience,generalNoLimit:s.generalNoLimit,protectedPlayers:s.protectedPlayers.map(p=>({id:p.id,sport:p.sport,entityType:p.entityType,name:p.name.trim()})),protectedCardIds:[...new Set(s.protectedCardIds)],playerPacks:s.playerPacks.map(p=>({accountId:p.accountId,sport:p.sport,id:p.id,name:p.name.trim(),count:p.count}))};
+  if(typeof s.boosterBoostAll!=='boolean'||typeof s.boosterUseLegendary!=='boolean')throw new OperationError('Неверные общие настройки бустеров.');
+  const boosterTargets=validateBoosterTargets(s.boosterTargets);
+  return {priority:[...s.priority],autoList:s.autoList,pricingMode:s.pricingMode,maxPacks:s.maxPacks,generalResilience:s.generalResilience,generalNoLimit:s.generalNoLimit,protectedPlayers:s.protectedPlayers.map(p=>({id:p.id,sport:p.sport,entityType:p.entityType,name:p.name.trim()})),protectedCardIds:[...new Set(s.protectedCardIds)],playerPacks:s.playerPacks.map(p=>({accountId:p.accountId,sport:p.sport,id:p.id,name:p.name.trim(),count:p.count})),boosterBoostAll:s.boosterBoostAll,boosterUseLegendary:s.boosterUseLegendary,boosterTargets};
 }
 
 export function keepReason(card,settings){
