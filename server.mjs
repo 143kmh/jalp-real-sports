@@ -634,8 +634,14 @@ const server = http.createServer(async (req, res) => {
             }
             else if(result?.ok&&pending.command.action==='boost'){
               const r=result.snapshot,c=pending.command,net=result.boosterHttp;
+              const netPath=String(net?.path||''),expectedSuffix='/rarity/'+Number(r?.rarity);
               const networkConfirmed=Number.isInteger(net?.status)&&net.status>=200&&net.status<300&&
-                new RegExp('^/userpassboostercards/\\d+/rarity/'+Number(r?.rarity)+'
+                /^\/userpassboostercards\/\d+\/rarity\/[345]$/.test(netPath)&&netPath.endsWith(expectedSuffix);
+              if(r?.skipped===true&&!pending.boosterStarted&&!net)pending.resolve(r);
+              else if(!pending.boosterStarted||r?.applied!==true||r?.accountId!==c.accountId||r?.sport!==c.sport||r?.playerName!==c.playerName||Number(r?.mint)!==Number(c.mint)||![3,4,5].includes(Number(r?.rarity))||!networkConfirmed){
+                pending.reject(new OperationError('Real не подтвердил применение бустера. Не повторяйте его вручную, пока не проверите карточку.',pending.boosterStarted));
+              }else pending.resolve(r);
+            }
             else if(result?.ok&&pending.command.action==='list'){
               const plan=pending.command.plan,ids=result.listedCardIds;
               if((plan.selectedIds.length&&!pending.listingStarted)||!Array.isArray(ids)||ids.length!==plan.selectedIds.length||new Set(ids).size!==ids.length||ids.some(id=>!plan.selectedIds.includes(id))||result.mode!==plan.mode||result.durationHours!==24){
