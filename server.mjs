@@ -39,6 +39,21 @@ const ownedBrowser=new OwnedBrowser({root,origin,version:APP_VERSION,notify:()=>
 await ownedBrowser.initialize();
 const browserCommands=new Map();
 const commandNotifier=new CommandNotifier();
+
+function rejectBrowserCommand(id,pending,message){
+  clearTimeout(pending.timer);clearInterval(pending.watchdog);browserCommands.delete(id);
+  const uncertain=Boolean(pending.purchaseStarted||pending.listingStarted);
+  pending.reject(Object.assign(new OperationError(message,uncertain),{
+    chargePossible:Boolean(pending.purchaseStarted),
+    cancelled:true,
+  }));
+}
+function cancelBrowserCommands(jobId,message='Операция отменена пользователем.'){
+  for(const [id,pending] of [...browserCommands]){
+    if(pending.command.jobId===jobId)rejectBrowserCommand(id,pending,message);
+  }
+  commandNotifier.notify();
+}
 const playerQuotes=new Map();
 function browserConnected(){return browserState.mode==='owned'?ownedBrowser.status().connected:browserState.version===APP_VERSION&&Date.now()-browserState.lastSeen<90000;}
 const isResilientGeneral=job=>['open','max'].includes(job.type)&&job.settings.generalResilience===true;
@@ -52,9 +67,14 @@ async function browserCommand(action,payload={}){
   return new Promise((resolve,reject)=>{
     const pending={command,claimed:false,resolve,reject};
     pending.timer=setTimeout(()=>{
-      browserCommands.delete(command.id);
+      clearInterval(pending.watchdog);browserCommands.delete(command.id);
       reject(Object.assign(new OperationError('Браузер не завершил действие.',pending.claimed&&['open','list'].includes(action)),{chargePossible:Boolean(pending.purchaseStarted)}));
     },180000);
+    pending.watchdog=setInterval(()=>{
+      if(browserState.mode==='owned'&&!browserConnected()){
+        rejectBrowserCommand(command.id,pending,'Служебный Chrome отключился во время действия.');
+      }
+    },1000);
     browserCommands.set(command.id,pending);
     commandNotifier.notify();
     if(browserState.mode==='owned')ownedBrowser.wake();
@@ -478,7 +498,7 @@ const server = http.createServer(async (req, res) => {
         if(route==='result'){
           const pending=browserCommands.get(body.commandId);
           if(pending){
-            clearTimeout(pending.timer);browserCommands.delete(body.commandId);
+            clearTimeout(pending.timer);clearInterval(pending.watchdog);browserCommands.delete(body.commandId);
             const result=body.result;
             if(result?.ok&&pending.command.action==='open'){
               const pack=result.pack,c=pending.command;
@@ -514,6 +534,7 @@ const server = http.createServer(async (req, res) => {
         const job = store.jobs.find(j => j.id === body.jobId);
         if (!job) throw new Error('Задача не найдена.');
         job.cancelled = true;
+        cancelBrowserCommands(job.id);
         send(res, 200, { ok: true }); return;
       }
       if (url.pathname === '/api/acknowledge') {
@@ -529,7 +550,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/api/shutdown') {
         shuttingDown = true;
         commandNotifier.notify();
-        for (const j of store.jobs) if (['running', 'queued'].includes(j.status)) j.cancelled = true;
+        for (const j of store.jobs) if (['running', 'queued'].includes(j.status)) { j.cancelled = true; cancelBrowserCommands(j.id,'Приложение останавливается.'); }
         send(res, 200, { ok: true });
         worker.finally(async()=>{
           while(ownedBrowser.polling||ownedBrowser.starting)await new Promise(resolve=>setTimeout(resolve,100));
