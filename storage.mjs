@@ -44,6 +44,12 @@ export class Store {
       for (const job of this.jobs) if (['queued', 'running'].includes(job.status)) {
         job.status = 'interrupted';
         for (const item of job.items) if (['queued', 'running'].includes(item.status)) {
+          if(job.type==='boosters'&&Array.isArray(item.boosts)){
+            for(const boost of item.boosts)if(boost.status==='running'){
+              boost.status='uncertain';
+              boost.message='Приложение перезапущено во время применения. Проверьте карточку в Real; автоматического повтора нет.';
+            }
+          }
           item.status = item.status === 'running' && ['open','max','player'].includes(job.type) ? 'uncertain' : 'cancelled';
           item.message = 'Приложение перезапущено. Проверьте результат в Real; автоматического повтора нет.';
           if (item.status === 'uncertain' && this.accounts.has(item.accountId)) this.accounts.get(item.accountId).purchaseHold = true;
