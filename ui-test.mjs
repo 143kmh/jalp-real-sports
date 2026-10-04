@@ -20,6 +20,8 @@ test('booster workspace exposes first-25, boost-all and Legendary controls',()=>
   assert.match(html,/Запустить первые 25/);
   assert.match(script,/type:'boosters'/);
   assert.match(script,/booster-owned/);
+  assert.match(script,/boosterDirty/);
+  assert.match(script,/Настройки бустеров сохранены автоматически/);
 });
 test('scenario recorder controls are present and use explicit start/stop endpoints',()=>{
   for(const id of ['recorder-name','recorder-start','recorder-stop','recorder-status'])assert.ok(ids.includes(id));
