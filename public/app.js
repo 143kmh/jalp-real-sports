@@ -137,6 +137,28 @@ function renderRules(){
   $('max-all').disabled=!connectedAccounts().length||!connectedAccounts().every(canMax);
   const chosen=state.accounts.filter(a=>selected.has(a.id));$('max-selected').disabled=!chosen.length||!chosen.every(canMax);
 }
+function renderBoosters(){
+  if(!settingsDraft)return;
+  const previous=$('booster-account').value;
+  updateHTML('booster-account',connectedAccounts().map(a=>`<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(''));
+  if(connectedAccounts().some(a=>a.id===previous))$('booster-account').value=previous;
+  const accountId=$('booster-account').value,sportFilter=$('booster-sport').value,query=$('booster-query').value.toLocaleLowerCase().trim();
+  const configured=settingsDraft.boosterTargets||[];
+  const matches=boosterOwned.filter(p=>p.accountId===accountId&&(!sportFilter||p.sport===sportFilter)&&(!query||(p.name+' '+p.position+' '+leagueName(p.sport)).toLocaleLowerCase().includes(query)));
+  const rarityName=r=>({3:'Rare',4:'Epic',5:'Legendary'})[r]||'—';
+  updateHTML('booster-owned',matches.length?matches.map(p=>{
+    const index=configured.findIndex(t=>t.accountId===p.accountId&&t.sport===p.sport&&Number(t.entityId)===Number(p.entityId)),target=index>=0?configured[index]:null;
+    return `<div class="player-result"><span><b>${esc(p.name)}</b><small>${esc(leagueName(p.sport))}${p.position?' · '+esc(p.position):''}</small></span><label><input type="checkbox" data-booster-toggle="${esc(p.sport)}:${p.entityId}" ${target?'checked':''} ${state.busy?'disabled':''}> Бустить</label><select data-booster-rarity="${esc(p.sport)}:${p.entityId}" ${!target||state.busy?'disabled':''}><option value="3" ${target?.desiredRarity===3?'selected':''}>Rare</option><option value="4" ${target?.desiredRarity===4?'selected':''}>Epic</option><option value="5" ${target?.desiredRarity===5?'selected':''}>Legendary</option></select></div>`;
+  }).join(''):'<p class="empty-inline">Нет загруженных owned игроков по текущему фильтру.</p>');
+  const selected=configured.filter(t=>t.accountId===accountId);
+  updateHTML('booster-selected',selected.length?selected.slice(0,100).map(t=>`<div class="protected-player"><span>${esc(leagueName(t.sport))} · ${esc(t.name)}${t.position?' · '+esc(t.position):''}</span><span class="badge">${rarityName(t.desiredRarity)}</span></div>`).join(''):`<p class="empty-inline">${settingsDraft.boosterBoostAll?'Режим «Забустить всех» включён: отдельный список не обязателен.':'Игроки не выбраны.'}</p>`);
+  $('booster-load').disabled=state.busy||sending||!accountId;
+  $('booster-account').disabled=state.busy||sending||!connectedAccounts().length;
+  $('booster-sport').disabled=state.busy||sending;
+  $('booster-query').disabled=state.busy||sending;
+  $('booster-run').disabled=state.busy||sending||settingsDirty||!usableBrowser()||!accountId||(!settingsDraft.boosterBoostAll&&!selected.length);
+  $('booster-hint').textContent=settingsDirty?'Сохраните правила перед запуском.':!usableBrowser()?'Запустите служебный Chrome и войдите в Real.':settingsDraft.boosterBoostAll?'Будут взяты первые 25 owned игроков из Today\'s players.':'Будут обработаны первые 25 выбранных игроков, которые есть в Today\'s players.';
+}
 function renderPack(pack,key){
   const records=pack.listings||[],labels={queued:'В очереди Real',listed:'Выставлена',kept:'Оставлена',submitting:'Отправляется',cancelled:'Отменено',uncertain:'Проверьте в Real',error:'Ошибка'};
   return `<div class="pack-result"><details class="job-cards" data-detail-key="${esc(key)}"><summary>${esc(leagueName(pack.sport||'nfl'))} · ${pack.cardCount??pack.cards?.length??0} карт / бустеров · ${fmt(pack.cost??0)} Rax${pack.id?` · пак №${esc(pack.id)}`:''}</summary>${(pack.cards||[]).map(c=>{const listing=records.find(r=>r.cardId===c.id),protectedCard=state.settings?.protectedCardIds.includes(c.id);return `<div class="received-card"><span>${esc(c.rarity)} · ${esc(c.label)}${c.mint!=null?` · #${esc(c.mint)}`:''}${listing?`<br><span class="listing-state">${esc(labels[listing.status]||listing.status)}${listing.durationHours?' · 24ч':''}${listing.mode?` · ${esc(listing.mode)}`:''}${listing.price!=null?` · ${fmt(listing.price)} Rax`:listing.priceDisplay?` · ${esc(listing.priceDisplay)}`:''}${listing.message?` · ${esc(listing.message)}`:''}</span>`:''}</span><button class="card-protect" data-protect-card="${c.id}" ${state.busy?'disabled':''}>${protectedCard?'Снять защиту':'Защитить'}</button></div>`;}).join('')}${pack.listingError?`<p class="listing-error">${esc(pack.listingError)}</p>`:''}${pack.summaryText?`<p class="pack-summary">${esc(pack.summaryText)}</p>`:''}</details></div>`;
