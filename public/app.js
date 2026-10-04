@@ -333,6 +333,28 @@ $('general-accounts').addEventListener('change', event => {
   renderSelection();
 });
 for(const id of ['pp-account','pp-sport'])$(id).addEventListener('change',()=>{ppQuote=null;ppResults=[];$('pp-results').innerHTML='';$('pp-price').textContent='Проверьте цены для выбранного аккаунта и спорта.';renderPlayerPacks();});
+for(const id of ['booster-account','booster-sport'])$(id).addEventListener('change',()=>{boosterOwned=[];renderBoosters();});
+$('booster-query').addEventListener('input',renderBoosters);
+$('booster-load').addEventListener('click',async()=>{
+  if(state.busy||sending)return;sending=true;render();
+  try{const params=new URLSearchParams({accountId:$('booster-account').value});if($('booster-sport').value)params.set('sport',$('booster-sport').value);boosterOwned=(await api('booster-owned?'+params)).players;notice(`Загружено owned игроков: ${boosterOwned.length}.`);}
+  catch(e){notice(e.message,true);}finally{sending=false;await sync();}
+});
+$('booster-all').addEventListener('change',()=>{settingsDraft.boosterBoostAll=$('booster-all').checked;editSettings();});
+$('booster-no-legendary').addEventListener('change',()=>{settingsDraft.boosterUseLegendary=!$('booster-no-legendary').checked;editSettings();});
+$('booster-owned').addEventListener('change',e=>{
+  if(state.busy||sending)return;const key=e.target.dataset.boosterToggle||e.target.dataset.boosterRarity;if(!key)return;
+  const [sport,rawId]=key.split(':'),entityId=Number(rawId),player=boosterOwned.find(p=>p.sport===sport&&Number(p.entityId)===entityId);if(!player)return;
+  settingsDraft.boosterTargets??=[];let index=settingsDraft.boosterTargets.findIndex(t=>t.accountId===player.accountId&&t.sport===sport&&Number(t.entityId)===entityId);
+  if(e.target.dataset.boosterToggle!==undefined){if(e.target.checked&&index<0)settingsDraft.boosterTargets.push({accountId:player.accountId,sport,entityId,name:player.name,position:player.position||'',desiredRarity:settingsDraft.boosterUseLegendary?5:4});if(!e.target.checked&&index>=0)settingsDraft.boosterTargets.splice(index,1);}
+  else if(index>=0)settingsDraft.boosterTargets[index].desiredRarity=Number(e.target.value);
+  editSettings();
+});
+$('booster-run').addEventListener('click',async()=>{
+  if(state.busy||sending||settingsDirty)return;const accountId=$('booster-account').value;if(!accountId)return;sending=true;render();
+  try{await api('jobs',{type:'boosters',accountIds:[accountId],requestId:crypto.randomUUID()});wakeBrowser();navigate('boosters');notice('Запущено применение бустеров к первым 25 подходящим игрокам.');}
+  catch(e){notice(e.message,true);}finally{sending=false;await sync();}
+});
 async function loadPackPlayers(search){
   if(state.busy||sending)return;sending=true;render();
   try{const params=new URLSearchParams({accountId:$('pp-account').value,sport:$('pp-sport').value,...(search?{query:$('pp-query').value}:{})});ppResults=(await api((search?'players?':'player-pack-players?')+params)).players.filter(p=>p.entityType==='player');
