@@ -67,13 +67,22 @@ function letterAvatarPage(name='fixture_user',run,configure=()=>{}){
   configure({body,nav,context});
   vm.runInNewContext(navigationCode,context);vm.runInNewContext(listingCode,context);vm.runInNewContext(adapterCode,context);
   const message=(data)=>new Promise(resolve=>listener(data,{id:'test-extension'},resolve));
-  return {message,settings};
+  return {message,settings,handlers,body};
 }
 test('real content adapter verifies a letter avatar by full username in Settings',async()=>{
   const page=letterAvatarPage('fixture_user',async(c,ui)=>({id:await ui.accountId(c)}));
   const command={id:'letter-avatar-check',action:'check',accountId:'user-o',accountName:'fixture_user'};
   const result=await page.message({type:'EXECUTE',command});assert.equal(result.snapshot.id,'user-o');assert.equal(page.settings.hidden,false);
   const snapshot=await page.message({type:'SNAPSHOT'});assert.equal(snapshot.accountId,'user-o');assert.equal(snapshot.version,'0.4.4');
+});
+test('scenario recorder captures manual clicks without field values',async()=>{
+  const page=letterAvatarPage('fixture_user',async()=>({}));
+  const start=await page.message({type:'EXECUTE',command:{id:'record-start',action:'record-start',name:'apply-booster'}});
+  assert.equal(start.ok,true);assert.equal(start.snapshot.recording,true);
+  page.handlers.click({isTrusted:true,target:page.settings});
+  const stop=await page.message({type:'EXECUTE',command:{id:'record-stop',action:'record-stop'}});
+  assert.equal(stop.ok,true);assert.equal(stop.snapshot.scenario.name,'apply-booster');assert.equal(stop.snapshot.scenario.events.length,1);
+  assert.equal(Object.hasOwn(stop.snapshot.scenario.events[0].target,'value'),false);
 });
 test('same initial is never accepted as account identity',async()=>{
   const page=letterAvatarPage('other',async(c,ui)=>({id:await ui.accountId(c)}));
