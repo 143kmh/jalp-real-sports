@@ -188,7 +188,7 @@ export async function getOwnedPackPlayers(account,sport,request=realRequest){
 
 export async function getOwnedBoosterPlayers(account,sport=null,request=realRequest){
   await verifyAccount(account,request);
-  if(!account.seasons)await getLeagueCatalog(account,request);
+  await getLeagueCatalog(account,request);
   const sports=sport?[sport]:Object.keys(account.seasons||{}).filter(s=>Object.hasOwn(LEAGUES,s));
   if(sport&&!Object.hasOwn(LEAGUES,sport))throw new OperationError('Неизвестный вид спорта для бустеров.');
   const players=[];
