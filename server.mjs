@@ -22,7 +22,7 @@ await store.load();
 let busy = false;
 let shuttingDown = false;
 let worker = Promise.resolve();
-const APP_VERSION='0.4.5';
+const APP_VERSION='0.4.6';
 const ownedKey=crypto.randomBytes(32).toString('hex');
 const browserState={mode:'owned',lastSeen:0,tabId:null,snapshot:null,version:null};
 const ownedBrowser=new OwnedBrowser({root,origin,version:APP_VERSION,notify:()=>commandNotifier.notify(),onAccount:async account=>{
