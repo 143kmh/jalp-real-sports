@@ -385,7 +385,7 @@ async function openOne(job,item,account,sport,cost,verifiedInfo){
 
 async function createJob(body) {
   if(body.type==='open')body={...body,type:'max'};
-  if (!['refresh', 'open','check','max','player','player-check'].includes(body.type)) throw new Error('Неверный тип задачи.');
+  if (!['refresh', 'open','check','max','player','player-check','boosters'].includes(body.type)) throw new Error('Неверный тип задачи.');
   if (typeof body.requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId)) throw new Error('Неверный идентификатор операции.');
   const existing = store.jobs.find(j => j.requestId === body.requestId);
   if (existing) return existing;
@@ -411,23 +411,28 @@ async function createJob(body) {
     worker=runJob(job).catch(()=>{job.status='error';job.message='Ошибка сохранения. Проверьте покупки в Real.';}).finally(async()=>{try{if(browserState.mode==='owned')await ownedBrowser.applyVisibility();}catch{}busy=false;commandNotifier.notify();});return job;
   }
   if (body.type !== 'refresh') {
-    if(store.settings.autoList&&!['default','min','max'].includes(store.settings.pricingMode))throw new OperationError('Suggested удалён: выберите Default / Min / Max и сохраните правила до открытия пака.');
     if(!browserConnected()||!ownedBrowser.status().loggedIn)throw new OperationError('Запустите служебный браузер и войдите в Real через «Добавить аккаунты».');
-    if(body.type!=='max'&&!Object.hasOwn(LEAGUES,body.sport))throw new Error('Выберите лигу.');
-    for (const id of body.accountIds) {
-      const a = store.accounts.get(id), info = a.packs?.[body.sport];
-      const resilient=['open','max'].includes(body.type);
-      if (a.purchaseHold&&!resilient) throw new Error(`Проверьте предыдущую покупку на аккаунте ${a.name}.`);
-      if(resilient)continue;
-      if(body.type==='max'){
-        if(a.status!=='ready'||!Number.isFinite(body.budgets?.[id])||body.budgets[id]<0||body.budgets[id]!==a.balance||store.settings.priority.some(s=>!a.seasons?.[s]||!a.packs?.[s]))throw new Error(`Сначала обновите баланс и выбранные лиги для ${a.name}.`);
-      }else if (!info || info.disabled || !Number.isFinite(body.costs?.[id]) || info.cost !== body.costs[id]) throw new Error(`Сначала обновите цену ${body.sport.toUpperCase()} для ${a.name}.`);
+    if(body.type==='boosters'){
+      if(!store.settings.boosterBoostAll&&!store.settings.boosterTargets.some(t=>body.accountIds.includes(t.accountId)))throw new OperationError('Включите «Забустить всех» или выберите игроков и сохраните правила.');
+    }else{
+      if(store.settings.autoList&&!['default','min','max'].includes(store.settings.pricingMode))throw new OperationError('Suggested удалён: выберите Default / Min / Max и сохраните правила до открытия пака.');
+      if(body.type!=='max'&&!Object.hasOwn(LEAGUES,body.sport))throw new Error('Выберите лигу.');
+      for (const id of body.accountIds) {
+        const a = store.accounts.get(id), info = a.packs?.[body.sport];
+        const resilient=['open','max'].includes(body.type);
+        if (a.purchaseHold&&!resilient) throw new Error(`Проверьте предыдущую покупку на аккаунте ${a.name}.`);
+        if(resilient)continue;
+        if(body.type==='max'){
+          if(a.status!=='ready'||!Number.isFinite(body.budgets?.[id])||body.budgets[id]<0||body.budgets[id]!==a.balance||store.settings.priority.some(s=>!a.seasons?.[s]||!a.packs?.[s]))throw new Error(`Сначала обновите баланс и выбранные лиги для ${a.name}.`);
+        }else if (!info || info.disabled || !Number.isFinite(body.costs?.[id]) || info.cost !== body.costs[id]) throw new Error(`Сначала обновите цену ${body.sport.toUpperCase()} для ${a.name}.`);
+      }
     }
   }
   const job = {
     id: crypto.randomUUID(), requestId: body.requestId, type: body.type, sport: body.sport || null,
     settings:{...validateSettings(store.settings),...(['open','max'].includes(body.type)?{generalResilience:true,generalNoLimit:true}:{})},
-    createdAt: new Date().toISOString(), status: 'queued', items: body.accountIds.map(id => ({ accountId: id, accountName: store.accounts.get(id).name, status: 'queued', cost: ['open','check'].includes(body.type)?body.costs[id]:null,...(body.type==='max'?{budget:body.budgets[id]}:{}) })),
+    ...(body.type==='boosters'?{limit:25}:{}),
+    createdAt: new Date().toISOString(), status: 'queued', items: body.accountIds.map(id => ({ accountId: id, accountName: store.accounts.get(id).name, status: 'queued', cost: ['open','check'].includes(body.type)?body.costs?.[id]:null,...(body.type==='max'?{budget:body.budgets[id]}:{}) })),
   };
   busy = true;
   store.jobs.push(job);
