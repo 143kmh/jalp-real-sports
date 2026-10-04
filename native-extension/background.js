@@ -3,6 +3,7 @@ const ORIGIN='http://127.0.0.1:5127';
 let polling=false;
 let executingCommand=null, nativeAttention=null;
 const observedHeaders=new Map();
+const boosterNetwork=new Map();
 let wakePending=false;
 async function api(path,body){
   const {token}=await chrome.storage.session.get('token');
@@ -124,7 +125,15 @@ async function poll(){
         }
       }
       catch(error){result={ok:false,uncertain:delivered&&['open','list','boost'].includes(command.action),requiresAttention:Boolean(error.requiresAttention),message:delivered&&['open','list','boost'].includes(command.action)?'Вкладка не ответила. Результат действия неизвестен.':error.message||'Real не готов.'};}
-      finally{if(nativeAttention)result={...result,ok:false,requiresAttention:true,message:nativeAttention};executingCommand=null;if(previousDiscardable!==undefined)try{await chrome.tabs.update(tab.id,{autoDiscardable:previousDiscardable});}catch{}}
+      finally{
+        if(command.action==='boost'){
+          result={...result,boosterHttp:boosterNetwork.get(command.id)||null};
+          boosterNetwork.delete(command.id);
+        }
+        if(nativeAttention)result={...result,ok:false,requiresAttention:true,message:nativeAttention};
+        executingCommand=null;
+        if(previousDiscardable!==undefined)try{await chrome.tabs.update(tab.id,{autoDiscardable:previousDiscardable});}catch{}
+      }
       await chrome.storage.session.set({reports:[{commandId:command.id,result}]});
       await api('result',{commandId:command.id,result});
       await chrome.storage.session.set({reports:[]});
@@ -168,10 +177,12 @@ chrome.webRequest.onCompleted.addListener(details=>{
     const {realTabId,token}=await chrome.storage.session.get(['realTabId','token']);
     if(!token||details.tabId!==realTabId||details.type!=='xmlhttprequest')return;
     const url=new URL(details.url);url.search='';
+    const boosterMutation=executingCommand?.action==='boost'&&details.method==='PUT'&&/^\/userpassboostercards\/\d+\/rarity\/[345]$/.test(url.pathname);
+    if(boosterMutation)boosterNetwork.set(executingCommand.id,{path:url.pathname,status:details.statusCode});
     if(executingCommand&&['POST','PUT'].includes(details.method)&&[401,403].includes(details.statusCode)&&
       (executingCommand.action==='open'&&url.pathname==='/collectingpacks/'+(executingCommand.kind==='player'?'player':'general')||
        executingCommand.action==='list'&&['/quicklist','/quicklist/preview','/cardmarketplacelistings'].includes(url.pathname)||
-       executingCommand.action==='boost'&&/^\/userpassboostercards\/\d+\/rarity\/[345]$/.test(url.pathname)))
+       boosterMutation))
       nativeAttention='Real отклонил действие ('+details.statusCode+'). Завершите ручную проверку; очередь остановлена.';
     await api('native-network',{record:{url:url.href,method:details.method,status:details.statusCode}});
     if(observed&&details.statusCode===200&&details.method==='GET')await api('native-session',{headers:observed.headers});
