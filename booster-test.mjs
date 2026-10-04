@@ -14,7 +14,8 @@ test('position-aware booster choice prefers useful stats but accepts any fallbac
   const options=[{text:'25x 15 TFL 10 FGM x4'},{text:'25x 0.5 RUYDS 25 SACK x3'},{text:'25x 3.5 REC 3.5 TKL x4'}];
   assert.equal(chooseOption(options,statPriority('nfl','RB')).text,'25x 0.5 RUYDS 25 SACK x3');
   assert.equal(chooseOption([{text:'25x 8 SAVE x17'}],statPriority('soccer','F')).text,'25x 8 SAVE x17');
-  assert.equal(chooseOption([{text:'15x 4 3PM x2'},{text:'15x 6 BLK x1'}],statPriority('wnba','G')).text,'15x 4 3PM x2');
+  assert.equal(chooseOption([{text:'15x 4 3PM x2'},{text:'15x 6 BLK x1'}],statPriority('wnba','PG')).text,'15x 4 3PM x2');
+  assert.equal(chooseOption([{text:'25x 50 AST x22'},{text:'25x 32.5 GOAL x20'}],statPriority('soccer','ST')).text,'25x 32.5 GOAL x20');
 });
 test('booster targets are persisted as one account/sport/player rule',()=>{
   const target={accountId:'owner',sport:'nfl',entityId:7,name:'Lamar Jackson',position:'QB',desiredRarity:5};
