@@ -25,6 +25,27 @@ test('Listing cancellation precedes submission and lost replies never retry',asy
   const blocked=uiMock({failAt:'authorize'});assert.equal((await scope.RealManagerWorkflow.list(command(),blocked.ui)).uncertain,false);assert.deepEqual(blocked.calls,['select','authorize']);
   const lost=uiMock({failAt:'submit'});assert.equal((await scope.RealManagerWorkflow.list(command(),lost.ui)).uncertain,true);assert.deepEqual(lost.calls,['select','authorize','submit']);
 });
+test('Authorized pack UI drift is non-blocking for the resilient queue',async()=>{
+  const c={id:'open-command',accountId:'owner',accountName:'Owner',sport:'nfl',cost:200,expiresAt:Date.now()+10000};
+  const ui={
+    accountId:async()=>c.accountId,switchAccount:async()=>{},preparePack:async()=>({sport:'nfl',kind:'general',cost:200}),
+    activate:async()=>{},authorize:async()=>{},purchaseOnce:async()=>{throw new Error('Состояние Real изменилось. Проверьте результат вручную.');},
+    revealSummary:async()=>({cardCount:5,summaryText:'Pack summary'}),interrupted:()=>true,
+  };
+  const result=await scope.RealManagerWorkflow.open(c,ui);
+  assert.equal(result.ok,false);assert.equal(result.uncertain,true);assert.equal(result.requiresAttention,false);
+});
+test('Explicit Real verification still blocks after authorization',async()=>{
+  const c={id:'open-command-hard',accountId:'owner',accountName:'Owner',sport:'nfl',cost:200,expiresAt:Date.now()+10000};
+  const hard=Object.assign(new Error('Real требует дополнительную ручную проверку.'),{requiresAttention:true});
+  const ui={
+    accountId:async()=>c.accountId,switchAccount:async()=>{},preparePack:async()=>({sport:'nfl',kind:'general',cost:200}),
+    activate:async()=>{},authorize:async()=>{},purchaseOnce:async()=>{throw hard;},
+    revealSummary:async()=>({cardCount:5,summaryText:'Pack summary'}),interrupted:()=>true,
+  };
+  const result=await scope.RealManagerWorkflow.open(c,ui);
+  assert.equal(result.ok,false);assert.equal(result.uncertain,true);assert.equal(result.requiresAttention,true);
+});
 test('Card matching uses mint and every participant, rejecting duplicates and extras',()=>{
   const p=plan(),items=[{mint:101,text:'B FIGHTER #101'},{mint:100,text:'A FIGHTER #100'}];assert.equal(scope.RealManagerPackListing.matchCards(p,items)[0].card.id,1);
   assert.throws(()=>scope.RealManagerPackListing.matchCards(p,[...items,items[0]]));assert.throws(()=>scope.RealManagerPackListing.matchCards(p,[items[0],items[0]]));
