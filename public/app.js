@@ -120,6 +120,8 @@ function renderRules(){
     $('general-resilience').checked=settingsDraft.generalResilience;$('general-no-limit').checked=settingsDraft.generalNoLimit;$('max-packs').value=settingsDraft.maxPacks;$('auto-list').checked=settingsDraft.autoList;$('pricing-mode').value=settingsDraft.pricingMode;$('protected-card-ids').value=settingsDraft.protectedCardIds.join(', ');
     $('search-sport').innerHTML=Object.entries(state.leagues).map(([s,name])=>`<option value="${esc(s)}">${esc(name)}</option>`).join('');
     $('single-sport').innerHTML=Object.entries(state.leagues).map(([s,name])=>`<option value="${esc(s)}">${esc(name)}</option>`).join('');$('single-sport').value=sport;
+    $('booster-sport').innerHTML='<option value="">Все виды спорта</option>'+Object.entries(state.leagues).map(([s,name])=>`<option value="${esc(s)}">${esc(name)}</option>`).join('');
+    $('booster-all').checked=Boolean(settingsDraft.boosterBoostAll);$('booster-no-legendary').checked=!settingsDraft.boosterUseLegendary;
   }
   const order=[...settingsDraft.priority,...Object.keys(state.leagues).filter(s=>!settingsDraft.priority.includes(s))];
   const leagueRow=s=>{const i=settingsDraft.priority.indexOf(s);return `<div class="priority-row"><input type="checkbox" data-priority="${esc(s)}" aria-label="Учитывать ${esc(leagueName(s))}" ${i>=0?'checked':''} ${state.busy?'disabled':''}><span>${i>=0?`${i+1}. `:''}${esc(leagueName(s))}</span>${i>=0?`<button data-move="${esc(s)}" data-direction="-1" ${i===0||state.busy?'disabled':''} aria-label="Поднять ${esc(leagueName(s))}">↑</button><button data-move="${esc(s)}" data-direction="1" ${i===settingsDraft.priority.length-1||state.busy?'disabled':''} aria-label="Опустить ${esc(leagueName(s))}">↓</button>`:''}</div>`;};
@@ -128,7 +130,7 @@ function renderRules(){
   $('protected-players').innerHTML=settingsDraft.protectedPlayers.map((p,i)=>`<div class="protected-player"><span>${esc(leagueName(p.sport))} · ${esc(p.name)}</span><button data-unprotect="${i}" ${state.busy?'disabled':''}>Убрать</button></div>`).join('')||'<p class="empty-inline">Защищённых игроков пока нет.</p>';
   const chosenAccount=$('search-account').value;
   $('search-account').innerHTML=connectedAccounts().map(a=>`<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');if(connectedAccounts().some(a=>a.id===chosenAccount))$('search-account').value=chosenAccount;
-  for(const id of ['save-settings','general-resilience','general-no-limit','max-packs','auto-list','pricing-mode','protected-card-ids','search-players','protect-owned-ufc'])$(id).disabled=state.busy||sending;
+  for(const id of ['save-settings','general-resilience','general-no-limit','max-packs','auto-list','pricing-mode','protected-card-ids','search-players','protect-owned-ufc','booster-all','booster-no-legendary'])$(id).disabled=state.busy||sending;
   $('protect-owned-ufc').disabled=state.busy||sending||!connectedAccounts().length;
   $('save-settings').disabled=state.busy||sending||!settingsDirty;
   $('settings-status').classList.toggle('dirty',settingsDirty);
