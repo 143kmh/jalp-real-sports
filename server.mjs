@@ -88,6 +88,7 @@ function snapshot() {
   return {
     accounts: [...store.accounts.values()].map(a => ({ ...publicAccount(a), browserSession:hasBrowserSession(a),purchaseHold: Boolean(a.purchaseHold) })),
     jobs: store.jobs.slice(-40).reverse(), busy, seasons: { nfl: '2026', ufc: '2023' },
+    version:APP_VERSION,
     settings:store.settings,leagues:LEAGUES,
     recorder:{...scenarioRecorder},
     browser:{connected:browserConnected(),mode:browserState.mode,tabId:browserState.tabId,loggedIn:browserState.mode==='owned'?ownedBrowser.status().loggedIn:browserState.snapshot?.loggedIn??false,version:browserState.mode==='owned'?APP_VERSION:browserState.version,owned:ownedBrowser.status()},
