@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Real Manager — Chrome",
   "short_name": "Real Manager",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Управление штатным интерфейсом Real в отдельном обычном Chrome. Без CDP, обхода проверок и изменения цен.",
   "permissions": ["storage", "alarms", "webRequest"],
   "host_permissions": ["http://127.0.0.1:5127/*", "https://realsports.io/*", "https://www.realsports.io/*", "https://web.realapp.com/*"],
