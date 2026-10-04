@@ -308,7 +308,7 @@
     if(!auth?.ok)throw Object.assign(new Error(auth?.error||'Панель не подтвердила применение бустера.'),{requiresAttention:Boolean(auth?.requiresAttention)});
     if(Date.now()>=command.expiresAt||await accountId(command)!==command.accountId)throw new Error('Аккаунт изменился перед применением бустера.');
     click(selected.element,selected.text.slice(0,80));
-    try{await wait(()=>/Booster card applied/i.test(document.body.innerText||''),'Real не подтвердил применение бустера.',12000);}
+    try{await wait(()=>!boosterPanel(command)&&/Booster card applied/i.test(document.body.innerText||''),'Real не подтвердил применение бустера.',12000);}
     catch(error){error.uncertain=true;throw error;}
     return {ok:true,snapshot:{applied:true,accountId:command.accountId,sport:command.sport,playerName:command.playerName,mint:command.mint,rarity,rarityLabel:labels[rarity],boosterText:selected.text}};
   }
