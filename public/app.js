@@ -12,13 +12,14 @@ let connectTimer;
 let settingsDraft=null,settingsDirty=false;
 let searchResults=[];
 let ppResults=[],ppQuote=null;
+let boosterOwned=[];
 let generalJobId=null;
 const sections={
   accounts:['Аккаунты','Сессии, балансы и доступ к операциям.'],
   player:['Player packs','Выбор игроков и количества паков для каждого аккаунта.'],
   general:['General packs','Открытие, приоритет лиг и правила автолистинга.'],
   application:['Приложение','Подключение браузера, журнал и управление локальным сервером.'],
-  boosters:['Бустеры','Полученные бустеры сохраняются в коллекции Real.']
+  boosters:['Бустеры','Автоматическое применение бустеров к owned игрокам, которые играют сегодня.']
 };
 function navigate(section){
   if(!sections[section])section='accounts';
@@ -238,7 +239,7 @@ function render() {
   $('pack-count').textContent = state.jobs.reduce((sum, j) => sum + (['open','max','player'].includes(j.type)?j.items.reduce((n,i)=>n+(i.packs?.length??(i.pack?1:0)),0):0),0);
   $('empty').hidden = state.accounts.length > 0;
   $('refresh-all').disabled = state.busy || sending || state.recorder?.active || !connectedAccounts().length;
-  renderAccounts();renderGeneralAccounts();
+  renderAccounts();renderGeneralAccounts();renderBoosters();
   $('connection-dot').classList.toggle('connected',!!state.browser?.connected);
   $('connection-label').textContent=state.browser?.connected?(state.browser.mode==='owned'?'Браузер бота подключён':'Helium подключён'):'Нет подключения';
   renderOwnedBrowser();
@@ -248,10 +249,10 @@ function render() {
   $('run-state').classList.toggle('busy',state.busy||sending);
   const labels = { queued: 'В очереди', running: 'Выполняется', success: 'Готово', error: 'Ошибка', uncertain: 'Неизвестно', warning: 'Предупреждения', cancelled: 'Отменено' };
   const filter=$('job-filter').value;
-  const jobs=state.jobs.filter(j=>filter==='all'||filter==='packs'&&['open','max','player'].includes(j.type)||filter==='errors'&&(j.status==='error'||j.status==='uncertain'||j.items.some(i=>['error','uncertain','warning'].includes(i.status))));
+  const jobs=state.jobs.filter(j=>filter==='all'||filter==='packs'&&['open','max','player','boosters'].includes(j.type)||filter==='errors'&&(j.status==='error'||j.status==='uncertain'||j.items.some(i=>['error','uncertain','warning'].includes(i.status))));
   const openedDetails=[...$('jobs').querySelectorAll('details[open]')].map(e=>e.dataset.detailKey);
   updateHTML('jobs',jobs.length ? jobs.map(job => {
-    const title = job.type==='player-check'?`${leagueName(job.sport)} · Проверка Player packs без покупки`:job.type==='player'?`${leagueName(job.sport)} · Player packs · все карты сохраняются`:job.type==='max'?`Максимум · ${job.settings.priority.map(leagueName).join(' → ')}`:job.type === 'open' ? `${leagueName(job.sport)} · General Pack` : job.type==='check'?`Проверка ${leagueName(job.sport)} · без покупки`:'Обновление аккаунтов';
+    const title = job.type==='boosters'?'Бустеры · первые 25':job.type==='player-check'?`${leagueName(job.sport)} · Проверка Player packs без покупки`:job.type==='player'?`${leagueName(job.sport)} · Player packs · все карты сохраняются`:job.type==='max'?`Максимум · ${job.settings.priority.map(leagueName).join(' → ')}`:job.type === 'open' ? `${leagueName(job.sport)} · General Pack` : job.type==='check'?`Проверка ${leagueName(job.sport)} · без покупки`:'Обновление аккаунтов';
     const date = new Date(job.createdAt).toLocaleString('ru-RU');
     return `<div class="job"><div class="job-head"><b>${esc(title)}</b><small>${esc(date)}</small></div>${job.message ? `<p class="card-error">${esc(job.message)}</p>` : ''}${job.items.map(item => `<div class="job-item"><span class="job-state ${esc(item.status)}">${esc(labels[item.status] || item.status)}</span><div><b>${esc(item.accountName)}</b> ${esc(item.message || '')}${renderRecovery(item,job.id)}${(item.packs||(item.pack?[item.pack]:[])).map((pack,i)=>renderPack(pack,job.id+':'+item.accountName+':'+i)).join('')}</div></div>`).join('')}</div>`;
   }).join('') : '<p class="empty-inline">Нет операций для выбранного фильтра.</p>');
