@@ -128,7 +128,7 @@ async function runBoosterJob(job){
     try{
       await verifyAccount(account);
       if(!account.seasons)await getLeagueCatalog(account);
-      const eligible=[];
+      const eligible=[],seenPlayers=new Set();
       for(const sport of BOOST_SPORTS){
         if(job.cancelled||shuttingDown||eligible.length>=job.limit)break;
         if(!account.seasons?.[sport])continue;
@@ -145,8 +145,11 @@ async function runBoosterJob(job){
         if(scan.accountId!==account.id||scan.sport!==sport||!Array.isArray(scan.players))throw new OperationError('Real вернул непроверенный список Today\'s players.');
         for(const player of scan.players){
           if(eligible.length>=job.limit)break;
+          const playerKey=sport+':'+String(player.name||'').trim().toLocaleLowerCase();
+          if(seenPlayers.has(playerKey))continue;
           const target=findConfiguredTarget(job.settings,account.id,sport,player.name);
           if(!job.settings.boosterBoostAll&&!target)continue;
+          seenPlayers.add(playerKey);
           const desired=desiredRarity(target?.desiredRarity,job.settings.boosterUseLegendary);
           eligible.push({...player,sport,desiredRarity:desired,statPriority:statPriority(sport,target?.position||player.position),configured:Boolean(target)});
         }
