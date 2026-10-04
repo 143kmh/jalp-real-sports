@@ -118,8 +118,79 @@ function validateIds(ids) {
   for(const id of ids)requireBrowserSession(store.accounts.get(id));
 }
 
+async function runBoosterJob(job){
+  job.status='running';await saveJobHistory();
+  let fatal=false;
+  for(const item of job.items){
+    if(job.cancelled||shuttingDown){item.status='cancelled';item.message='Очередь остановлена.';continue;}
+    item.status='running';item.boosts=[];await saveJobHistory();
+    const account=store.accounts.get(item.accountId);
+    try{
+      await verifyAccount(account);
+      if(!account.seasons)await getLeagueCatalog(account);
+      const eligible=[];
+      for(const sport of BOOST_SPORTS){
+        if(job.cancelled||shuttingDown||eligible.length>=job.limit)break;
+        if(!account.seasons?.[sport])continue;
+        const configured=job.settings.boosterTargets.filter(t=>t.accountId===account.id&&t.sport===sport);
+        if(!job.settings.boosterBoostAll&&!configured.length)continue;
+        let scan;
+        try{
+          scan=await browserCommand('boost-scan',{jobId:job.id,accountId:account.id,accountName:account.name,sport,leagueLabel:LEAGUES[sport]});
+        }catch(error){
+          if(error.requiresAttention)throw error;
+          item.boosts.push({sport,status:'warning',message:'Не удалось прочитать Today\'s players: '+error.message});
+          await saveJobHistory();continue;
+        }
+        if(scan.accountId!==account.id||scan.sport!==sport||!Array.isArray(scan.players))throw new OperationError('Real вернул непроверенный список Today\'s players.');
+        for(const player of scan.players){
+          if(eligible.length>=job.limit)break;
+          const target=findConfiguredTarget(job.settings,account.id,sport,player.name);
+          if(!job.settings.boosterBoostAll&&!target)continue;
+          const desired=desiredRarity(target?.desiredRarity,job.settings.boosterUseLegendary);
+          eligible.push({...player,sport,desiredRarity:desired,statPriority:statPriority(sport,target?.position||player.position),configured:Boolean(target)});
+        }
+      }
+      if(!eligible.length){item.status='success';item.message='Сегодня не найдено подходящих owned игроков для буста.';item.finishedAt=new Date().toISOString();await saveJobHistory();continue;}
+      for(const player of eligible){
+        if(job.cancelled||shuttingDown)break;
+        const record={sport:player.sport,playerName:player.name,position:player.position||'',mint:player.mint,desiredRarity:player.desiredRarity,status:'running'};item.boosts.push(record);await saveJobHistory();
+        try{
+          const result=await browserCommand('boost',{jobId:job.id,accountId:account.id,accountName:account.name,sport:player.sport,leagueLabel:LEAGUES[player.sport],playerName:player.name,position:player.position||'',mint:player.mint,rarityFallback:rarityFallback(player.desiredRarity,job.settings.boosterUseLegendary),statPriority:player.statPriority});
+          if(result.accountId!==account.id||result.sport!==player.sport||result.playerName!==player.name||Number(result.mint)!==Number(player.mint))throw new OperationError('Real не подтвердил игрока после применения бустера.',true);
+          if(result.applied){
+            record.status='success';record.rarity=result.rarity;record.rarityLabel=result.rarityLabel;record.boosterText=result.boosterText;record.message=`${result.rarityLabel}: ${result.boosterText}`;
+          }else{
+            record.status='skipped';record.message=result.reason||'Подходящий бустер не найден.';
+          }
+        }catch(error){
+          record.status=error.uncertain?'uncertain':'error';record.message=error.message;
+          if(error.requiresAttention){fatal=true;job.cancelled=true;job.message=error.message;}
+        }
+        record.finishedAt=new Date().toISOString();await saveJobHistory();
+        if(fatal)break;
+      }
+      if(job.cancelled&&!fatal){item.status='cancelled';item.message='Остановлено пользователем.';}
+      else if(fatal){item.status='error';item.message=job.message;}
+      else{
+        const applied=item.boosts.filter(r=>r.status==='success').length,skipped=item.boosts.filter(r=>r.status==='skipped').length,problems=item.boosts.filter(r=>['error','uncertain','warning'].includes(r.status)).length;
+        item.status=problems?'warning':'success';item.message=`Применено ${applied} бустеров; пропущено ${skipped}; проблем ${problems}. Обработано до ${job.limit} игроков.`;
+      }
+    }catch(error){
+      item.status=error.uncertain?'uncertain':'error';item.message=error instanceof OperationError?error.message:'Не удалось выполнить бустеры.';
+      if(error.requiresAttention){fatal=true;job.cancelled=true;job.message=item.message;}
+    }
+    item.finishedAt=new Date().toISOString();
+    try{await store.saveHistory();await store.saveAccounts();}catch{fatal=true;job.cancelled=true;job.message='Не удалось сохранить результат бустеров на диск.';}
+    if(fatal)break;
+  }
+  for(const item of job.items)if(['queued','running'].includes(item.status)){item.status='cancelled';item.message='Очередь остановлена.';}
+  job.status=fatal?'error':job.cancelled?'cancelled':'done';job.finishedAt=new Date().toISOString();await saveJobHistory();
+}
+
 async function runJob(job) {
   job.status = 'running'; await store.saveHistory();
+  if(job.type==='boosters')return runBoosterJob(job);
   if(isResilientGeneral(job))return runResilientGeneral(job);
   let fatal = false;
   for (const item of job.items) {
