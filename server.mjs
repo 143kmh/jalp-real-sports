@@ -9,7 +9,7 @@ import { CommandNotifier } from './command-notifier.mjs';
 import {validateSettings,recoverNewPack,publicCard,preparePackQuickList,runMaximum} from './automation.mjs';
 import {visitGeneral,scheduleGeneral,requiresGeneralAttention} from './general-runner.mjs';
 import {NativeBrowser as OwnedBrowser} from './native-browser.mjs';
-import {diagnosticArchive} from './diagnostics.mjs';
+import {diagnosticArchive,scenarioArchive} from './diagnostics.mjs';
 import {hasBrowserSession,requireBrowserSession,mergeBrowserAccount} from './browser-accounts.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +55,7 @@ function cancelBrowserCommands(jobId,message='Операция отменена 
   commandNotifier.notify();
 }
 const playerQuotes=new Map();
+let scenarioRecorder={active:false,name:null,startedAt:null};
 function browserConnected(){return browserState.mode==='owned'?ownedBrowser.status().connected:browserState.version===APP_VERSION&&Date.now()-browserState.lastSeen<90000;}
 const isResilientGeneral=job=>['open','max'].includes(job.type)&&job.settings.generalResilience===true;
 async function saveJobHistory(){
@@ -88,6 +89,7 @@ function snapshot() {
     accounts: [...store.accounts.values()].map(a => ({ ...publicAccount(a), browserSession:hasBrowserSession(a),purchaseHold: Boolean(a.purchaseHold) })),
     jobs: store.jobs.slice(-40).reverse(), busy, seasons: { nfl: '2026', ufc: '2023' },
     settings:store.settings,leagues:LEAGUES,
+    recorder:{...scenarioRecorder},
     browser:{connected:browserConnected(),mode:browserState.mode,tabId:browserState.tabId,loggedIn:browserState.mode==='owned'?ownedBrowser.status().loggedIn:browserState.snapshot?.loggedIn??false,version:browserState.mode==='owned'?APP_VERSION:browserState.version,owned:ownedBrowser.status()},
   };
 }
@@ -417,6 +419,29 @@ const server = http.createServer(async (req, res) => {
       if(url.pathname==='/api/settings'){
         if(busy)throw new Error('Дождитесь окончания задачи перед изменением настроек.');
         busy=true;try{await store.saveSettings(body);send(res,200,{settings:store.settings});}finally{busy=false;commandNotifier.notify();}return;
+      }
+      if(url.pathname==='/api/recorder/start'){
+        if(busy)throw new OperationError('Дождитесь завершения текущей задачи перед записью сценария.');
+        if(scenarioRecorder.active)throw new OperationError('Запись сценария уже идёт.');
+        if(!browserConnected()||!ownedBrowser.status().loggedIn)throw new OperationError('Запустите служебный Chrome и войдите в Real перед записью.');
+        const name=String(body.name||'').trim();
+        if(!name||name.length>80)throw new OperationError('Название сценария должно содержать от 1 до 80 символов.');
+        const started=await browserCommand('record-start',{name});
+        scenarioRecorder={active:true,name,startedAt:started.startedAt||new Date().toISOString()};
+        send(res,200,{recorder:{...scenarioRecorder}});return;
+      }
+      if(url.pathname==='/api/recorder/stop'){
+        if(!scenarioRecorder.active)throw new OperationError('Запись сценария не запущена.');
+        const meta={...scenarioRecorder};
+        const stopped=await browserCommand('record-stop',{name:meta.name});
+        scenarioRecorder={active:false,name:null,startedAt:null};
+        const secrets=[token,ownedKey,...[...store.accounts.values()].flatMap(a=>Object.entries(a.headers||{}).filter(([k])=>/auth|token|cookie/i.test(k)).map(([,v])=>v))];
+        const network=ownedBrowser.network.filter(record=>!meta.startedAt||Date.parse(record.at)>=Date.parse(meta.startedAt));
+        const payload={schema:1,version:APP_VERSION,name:meta.name,startedAt:meta.startedAt,finishedAt:new Date().toISOString(),scenario:stopped.scenario||null,network};
+        const zip=scenarioArchive(payload,secrets);
+        const safeName=meta.name.replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,50)||'scenario';
+        res.writeHead(200,{'content-type':'application/zip','content-disposition':'attachment; filename="real-manager-'+safeName+'-'+Date.now()+'.zip"','cache-control':'no-store','x-content-type-options':'nosniff'});
+        res.end(Buffer.from(zip));return;
       }
       if(url.pathname==='/api/owned-diagnostics'){
         const capture=await ownedBrowser.diagnostics();
