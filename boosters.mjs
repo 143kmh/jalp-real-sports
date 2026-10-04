@@ -34,13 +34,34 @@ common.ncaaf=common.nfl;common.wnba=common.nba;common.ncaam=common.nba;
 
 export function statPriority(sport,position=''){
   const table=common[sport]||{};
-  const pos=String(position||'').toUpperCase();
-  if(table[pos])return [...table[pos]];
-  if(sport==='mlb'){
-    if(/^(1B|2B|3B|SS)$/.test(pos))return ['HR','H','RBI','TB'];
-    if(pos==='DH')return ['HR','H','RBI','TB'];
+  const pos=String(position||'').toUpperCase().replace(/\s+/g,'').split(/[\/,|-]/)[0];
+  let group=pos;
+  if(['nfl','ncaaf'].includes(sport)){
+    if(['RB','FB','HB'].includes(pos))group='RB';
+    else if(['WR','TE'].includes(pos))group=pos;
+    else if(['CB','S','FS','SS','DB'].includes(pos))group='DB';
+    else if(['LB','OLB','ILB','MLB'].includes(pos))group='LB';
+    else if(['DE','DT','NT','DL','EDGE'].includes(pos))group='DL';
+    else if(['K','PK'].includes(pos))group='K';
+  }else if(['nba','wnba','ncaam'].includes(sport)){
+    if(['PG','SG','G'].includes(pos))group='G';
+    else if(['SF','PF','F'].includes(pos))group='F';
+    else if(pos==='C')group='C';
+  }else if(sport==='soccer'){
+    if(['ST','CF','LW','RW','F'].includes(pos))group='F';
+    else if(['CM','CAM','CDM','LM','RM','M'].includes(pos))group='M';
+    else if(['CB','LB','RB','LWB','RWB','D'].includes(pos))group='D';
+    else if(['GK','G'].includes(pos))group='GK';
+  }else if(sport==='nhl'){
+    if(['G','GK'].includes(pos))group='G';
+    else if(['D','LD','RD'].includes(pos))group='D';
+    else if(['C','LW','RW','F'].includes(pos))group='F';
+  }else if(sport==='mlb'){
+    if(['P','SP','RP','CP'].includes(pos))group=pos==='P'?'P':pos==='CP'?'RP':pos;
+    else if(pos==='C')group='C';
+    else if(['1B','2B','3B','SS','IF','DH','OF','LF','CF','RF'].includes(pos))group='IF';
   }
-  return [...(table.DEFAULT||[])];
+  return [...(table[group]||table.DEFAULT||[])];
 }
 export function optionScore(text,priority=[]){
   const value=' '+String(text||'').toUpperCase().replace(/[^A-Z0-9]+/g,' ')+' ';
