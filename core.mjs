@@ -186,6 +186,35 @@ export async function getOwnedPackPlayers(account,sport,request=realRequest){
   return [...players.values()];
 }
 
+export async function getOwnedBoosterPlayers(account,sport=null,request=realRequest){
+  await verifyAccount(account,request);
+  if(!account.seasons)await getLeagueCatalog(account,request);
+  const sports=sport?[sport]:Object.keys(account.seasons||{}).filter(s=>Object.hasOwn(LEAGUES,s));
+  if(sport&&!Object.hasOwn(LEAGUES,sport))throw new OperationError('Неизвестный вид спорта для бустеров.');
+  const players=[];
+  for(const current of sports){
+    const season=account.seasons?.[current];
+    if(!season)continue;
+    const entityType=current==='ufc'?'team':'player';
+    const params=new URLSearchParams({sport:current,season,entityType});
+    const data=await request(account,'GET',`/userpasses/${account.id}/passes?${params}`);
+    const passes=data?.passes;
+    if(!Array.isArray(passes)||passes.length>15000)throw new OperationError('Real не вернул owned-карты для бустеров.');
+    for(const p of passes){
+      if(p?.isRefunded===true||String(p?.userId)!==account.id||p?.sport!==current||p?.entityType!==entityType||String(p?.season)!==String(season))continue;
+      const entityId=Number(p.entityId);
+      if(!Number.isSafeInteger(entityId)||entityId<=0)continue;
+      const name=p.label||p.entity?.displayName||p.entity?.fullName||p.entity?.name;
+      if(typeof name!=='string'||!name.trim()||name.length>150)continue;
+      const position=String(p.position||p.entity?.position||p.primaryPlayer?.position||'').trim().slice(0,20);
+      players.push({accountId:account.id,id:entityId,entityId,name:name.trim(),sport:current,entityType,position});
+    }
+  }
+  const unique=new Map();
+  for(const p of players)if(!unique.has(`${p.sport}:${p.entityId}`))unique.set(`${p.sport}:${p.entityId}`,p);
+  return [...unique.values()].sort((a,b)=>a.sport.localeCompare(b.sport)||a.name.localeCompare(b.name));
+}
+
 export async function getOwnedUfcFighters(account,request=realRequest){
   await verifyAccount(account,request);
   const season=account.seasons?.ufc||SEASONS.ufc;
