@@ -73,7 +73,7 @@ test('real content adapter verifies a letter avatar by full username in Settings
   const page=letterAvatarPage('fixture_user',async(c,ui)=>({id:await ui.accountId(c)}));
   const command={id:'letter-avatar-check',action:'check',accountId:'user-o',accountName:'fixture_user'};
   const result=await page.message({type:'EXECUTE',command});assert.equal(result.snapshot.id,'user-o');assert.equal(page.settings.hidden,false);
-  const snapshot=await page.message({type:'SNAPSHOT'});assert.equal(snapshot.accountId,'user-o');assert.equal(snapshot.version,'0.4.5');
+  const snapshot=await page.message({type:'SNAPSHOT'});assert.equal(snapshot.accountId,'user-o');assert.equal(snapshot.version,'0.4.6');
 });
 test('scenario recorder captures manual clicks without field values',async()=>{
   const page=letterAvatarPage('fixture_user',async()=>({}));
