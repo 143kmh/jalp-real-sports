@@ -55,7 +55,11 @@ globalThis.RealManagerWorkflow = {
       if (!summary?.summaryText || !Number.isInteger(summary.cardCount) || summary.cardCount < 1 || summary.cardCount > 100) fail('Не удалось подтвердить сводку открытого пака.');
       return { ok: true, pack: { id: null, accountId: command.accountId, sport: command.sport, cost: command.cost, cards: [], ...summary } };
     } catch (error) {
-      return { ok: false, uncertain: started, requiresAttention:Boolean(error.requiresAttention||ui.interrupted?.()), recoverable: !started && !activationReached && error.recoverable === true && !ui.interrupted?.(), message: error.message || 'Действие остановлено. Проверьте вкладку Real.' };
+      const interrupted=Boolean(ui.interrupted?.());
+      // Once a purchase has been authorized, UI drift / a lost summary is recorded
+      // as an unknown opening and the resilient queue may recover and continue.
+      // Explicit Real verification/auth failures still require human attention.
+      return { ok: false, uncertain: started, requiresAttention:Boolean(error.requiresAttention||!started&&interrupted), recoverable: !started && !activationReached && error.recoverable === true && !interrupted, message: error.message || 'Действие остановлено. Проверьте вкладку Real.' };
     }
   },
 };
