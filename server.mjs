@@ -600,6 +600,15 @@ const server = http.createServer(async (req, res) => {
           pending.purchaseStarted=true;
           send(res,200,{ok:true});return;
         }
+        if(route==='authorize-booster'){
+          const pending=browserCommands.get(body.commandId),job=pending&&store.jobs.find(j=>j.id===pending.command.jobId);
+          if(!pending?.claimed||pending.command.action!=='boost'||pending.command.expiresAt<=Date.now()||!job||job.type!=='boosters'||job.cancelled||shuttingDown||job.status!=='running'||pending.boosterStarted||pending.authorizing)throw new OperationError('Бустер отменён, устарел или уже применялся.');
+          pending.authorizing=true;
+          const account=store.accounts.get(pending.command.accountId);await verifyAccount(account);
+          if(!browserCommands.has(body.commandId)||job.cancelled||shuttingDown||pending.command.expiresAt<=Date.now())throw new OperationError('Бустер отменён или аккаунт больше не подтверждён.');
+          pending.boosterStarted=true;
+          send(res,200,{ok:true});return;
+        }
         if(route==='authorize-listing'){
           const pending=browserCommands.get(body.commandId),job=pending&&store.jobs.find(j=>j.id===pending.command.jobId);
           if(!pending?.claimed||pending.command.action!=='list'||pending.command.expiresAt<=Date.now()||!job||['player','player-check'].includes(job.type)||job.cancelled||shuttingDown||job.status!=='running'||pending.listingStarted||pending.authorizing)throw new OperationError('Листинг отменён, устарел или уже отправлен.');
@@ -620,6 +629,13 @@ const server = http.createServer(async (req, res) => {
               if(!pending.purchaseStarted||pack?.accountId!==c.accountId||pack?.sport!==c.sport||pack?.cost!==c.cost||!Number.isInteger(pack?.cardCount)||pack.cardCount<1||pack.cardCount>100||typeof pack?.summaryText!=='string'||!pack.summaryText.includes('Pack summary'))pending.reject(new OperationError('Получен непроверенный результат. Проверьте пак в Real.',true));
               else pending.resolve({...pack,openCommandId:c.id,summaryText:pack.summaryText.slice(0,12000),cards:[]});
             }
+            else if(result?.ok&&pending.command.action==='boost'){
+              const r=result.snapshot,c=pending.command;
+              if(r?.skipped===true&&!pending.boosterStarted)pending.resolve(r);
+              else if(!pending.boosterStarted||r?.applied!==true||r?.accountId!==c.accountId||r?.sport!==c.sport||r?.playerName!==c.playerName||Number(r?.mint)!==Number(c.mint)||![3,4,5].includes(Number(r?.rarity))){
+                pending.reject(new OperationError('Real не подтвердил применение бустера. Не повторяйте его вручную, пока не проверите карточку.',pending.boosterStarted));
+              }else pending.resolve(r);
+            }
             else if(result?.ok&&pending.command.action==='list'){
               const plan=pending.command.plan,ids=result.listedCardIds;
               if((plan.selectedIds.length&&!pending.listingStarted)||!Array.isArray(ids)||ids.length!==plan.selectedIds.length||new Set(ids).size!==ids.length||ids.some(id=>!plan.selectedIds.includes(id))||result.mode!==plan.mode||result.durationHours!==24){
@@ -633,7 +649,7 @@ const server = http.createServer(async (req, res) => {
             else if(result?.ok)pending.resolve(result.snapshot||{});
             else{
               for(const r of pending.command.plan?.records||[])if(r.status==='submitting'){r.status='uncertain';r.message=result?.message||'Проверьте Quick list в Real.';}
-              pending.reject(Object.assign(new OperationError(result?.message||'Real не завершил действие в браузере.',Boolean(result?.uncertain||pending.purchaseStarted||pending.listingStarted)),{chargePossible:Boolean(pending.purchaseStarted),requiresAttention:Boolean(result?.requiresAttention)}));
+              pending.reject(Object.assign(new OperationError(result?.message||'Real не завершил действие в браузере.',Boolean(result?.uncertain||pending.purchaseStarted||pending.listingStarted||pending.boosterStarted)),{chargePossible:Boolean(pending.purchaseStarted),requiresAttention:Boolean(result?.requiresAttention)}));
             }
           }
           send(res,200,{ok:true});return;
