@@ -215,8 +215,49 @@
     const packImages=all('img').filter(e=>/\/assets\/packs\//.test(e.src)).map(e=>{const r=e.getBoundingClientRect();return {src:e.src,w:r.width,h:r.height,context:text(e.parentElement?.parentElement).slice(0,1500)};}).slice(0,30);
     return {version:'0.4.3',url:location.href,loggedIn:navPresent&&!body.includes('The web app is available to Real Pro members.'),identityVerified:Boolean(id),accountId:id,accountName:identity?.name||null,lastAction,cardsPanePresent:Boolean(shop),shopText:shop?text(shop).slice(0,10000):null,shopLabels,text:body.slice(0,20000),packDetails,packImages,quickListOptions:listingUi.inspectOptions(),controls:controls.slice(0,150)};
   }
+  let scenarioRecorder=null;
+  function recorderElement(element){
+    if(!(element instanceof Element))return null;
+    const target=element.closest('button,a,[role="button"],input,select,textarea,label,[tabindex]')||element;
+    const rect=target.getBoundingClientRect(),ancestors=[];
+    for(let node=target,depth=0;node&&node!==document.body&&depth++<6;node=node.parentElement){
+      ancestors.push({
+        tag:node.tagName,role:node.getAttribute('role'),aria:node.getAttribute('aria-label'),
+        title:node.getAttribute('title'),text:clean(text(node)).slice(0,700),
+        className:typeof node.className==='string'?node.className.slice(0,300):null,
+      });
+    }
+    let href=null;
+    if(target.tagName==='A'&&target.href){try{const u=new URL(target.href);href=u.origin===location.origin?u.pathname:u.origin+u.pathname;}catch{}}
+    return {
+      tag:target.tagName,role:target.getAttribute('role'),aria:target.getAttribute('aria-label'),
+      title:target.getAttribute('title'),text:clean(text(target)).slice(0,500),href,
+      rect:{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.width),h:Math.round(rect.height)},
+      disabled:Boolean(target.closest('[aria-disabled="true"],:disabled')),ancestors,
+    };
+  }
+  function recorderView(){
+    const body=clean(document.body?.innerText||'');
+    const dialogs=all('[role="dialog"]').map(e=>clean(text(e)).slice(0,5000)).filter(Boolean).slice(0,5);
+    const headings=all('h1,h2,h3').map(e=>clean(text(e)).slice(0,300)).filter(Boolean).slice(0,40);
+    const controls=all('button,a,[role="button"],select,input').map(e=>({
+      tag:e.tagName,role:e.getAttribute('role'),aria:e.getAttribute('aria-label'),title:e.getAttribute('title'),
+      text:clean(text(e)).slice(0,300),disabled:Boolean(e.closest('[aria-disabled="true"],:disabled')),
+    })).slice(0,160);
+    return {at:new Date().toISOString(),url:location.origin+location.pathname,bodyText:body.slice(0,12000),dialogs,headings,controls};
+  }
+  function recordManualEvent(type,event){
+    const recorder=scenarioRecorder;if(!recorder||!event.isTrusted)return;
+    const item={index:recorder.events.length+1,type,at:new Date().toISOString(),target:recorderElement(event.target),before:recorderView()};
+    recorder.events.push(item);if(recorder.events.length>300)recorder.events.shift();
+    setTimeout(()=>{item.after=recorderView();},600);
+    setTimeout(()=>{item.settled=recorderView();},1800);
+  }
+
   let active=false;
   for(const eventName of ['pointerdown','keydown'])document.addEventListener(eventName,event=>{if(event.isTrusted){identity=null;identityAttempted=null;openContext=null;if(active)humanInterrupted=true;}},true);
+  document.addEventListener('click',event=>recordManualEvent('click',event),true);
+  document.addEventListener('change',event=>recordManualEvent('change',event),true);
   const results=new Map();
   chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(sender.id!==chrome.runtime.id)return;
@@ -229,6 +270,17 @@
     humanInterrupted=false;identity=null;identityAttempted=null;lastAction=null;
     (async()=>{
       if(message.command.action==='snapshot')return {ok:true,snapshot:snapshot()};
+      if(message.command.action==='record-start'){
+        if(scenarioRecorder)throw new Error('Запись сценария уже идёт.');
+        scenarioRecorder={name:String(message.command.name||'Scenario').slice(0,80),startedAt:new Date().toISOString(),initial:recorderView(),events:[]};
+        return {ok:true,snapshot:{recording:true,name:scenarioRecorder.name,startedAt:scenarioRecorder.startedAt}};
+      }
+      if(message.command.action==='record-stop'){
+        if(!scenarioRecorder)throw new Error('Запись сценария не запущена.');
+        const finished={...scenarioRecorder,finishedAt:new Date().toISOString(),final:recorderView()};
+        scenarioRecorder=null;
+        return {ok:true,snapshot:{recording:false,scenario:finished}};
+      }
       if(['prepare-account','verify-account'].includes(message.command.action)){
         const c=message.command,before=await accountId(c),switched=before!==c.accountId;
         if(switched&&c.action==='prepare-account')await switchAccount(c);
