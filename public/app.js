@@ -371,7 +371,7 @@ $('refresh-all').addEventListener('click', () => startJob('refresh', connectedAc
 $('open-selected').addEventListener('click', () => startJob('open', state.accounts.filter(a => selected.has(a.id)).map(a => a.id)));
 $('cancel-job').addEventListener('click', async () => {
   const job = state.jobs.find(j => ['running','queued'].includes(j.status)); if (!job) return;
-  try { await api('cancel', { jobId: job.id }); notice('Оставшиеся аккаунты отменены. Текущий запрос завершится.'); await sync(); } catch(e) { notice(e.message,true); }
+  try { await api('cancel', { jobId: job.id }); notice('Очередь остановлена. Активная команда отменена; если покупка уже была отправлена в Real, она будет отмечена как непроверенная.'); await sync(); } catch(e) { notice(e.message,true); }
 });
 for(const id of ['add-account','empty-add-account'])$(id).addEventListener('click',()=>controlOwned('add-accounts'));
 $('finish-accounts').addEventListener('click',()=>controlOwned('finish-accounts'));
@@ -399,7 +399,7 @@ $('connect-browser').addEventListener('click',()=>{
   connectTimer=setTimeout(()=>notice('Не получили ответ расширения. Проверьте его в chrome://extensions, обновите панель в Helium и повторите подключение.',true),45000);
 });
 $('stop-server').addEventListener('click', async () => {
-  if(state.busy&&!confirm('Остановить приложение и отменить оставшуюся очередь? Текущий запрос завершится.'))return;
+  if(state.busy&&!confirm('Остановить приложение и отменить очередь? Активная команда будет прервана локально; уже отправленная покупка может завершиться в Real.'))return;
   try { await api('shutdown', {}); stopped = true; clearTimeout(timer); document.querySelectorAll('button').forEach(b => b.disabled = true); notice('Приложение завершает текущий запрос и останавливается. Для запуска откройте .cmd.'); }
   catch(e) { notice(e.message,true); }
 });
