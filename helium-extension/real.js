@@ -217,7 +217,7 @@
   }
   let scenarioRecorder=null;
   function recorderElement(element){
-    if(!(element instanceof Element))return null;
+    if(!element||typeof element.closest!=='function')return null;
     const target=element.closest('button,a,[role="button"],input,select,textarea,label,[tabindex]')||element;
     const rect=target.getBoundingClientRect(),ancestors=[];
     for(let node=target,depth=0;node&&node!==document.body&&depth++<6;node=node.parentElement){
