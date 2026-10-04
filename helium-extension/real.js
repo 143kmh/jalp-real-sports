@@ -208,7 +208,7 @@
     return null;
   }
   function todayRows(accountName,scope=document){
-    const pattern=/^(GENERAL|COMMON|UNCOMMON|RARE|EPIC|LEGENDARY)\s+Player\s+\S+\s+.+\s+#\d+\b/i;
+    const pattern=/^(GENERAL|COMMON|UNCOMMON|RARE|EPIC|LEGENDARY)\s+(?:Player|Fighter|Team)\s+\S+\s+.+\s+#\d+\b/i;
     const matches=all('div,[role="button"],button',scope).filter(e=>{
       const value=clean(text(e));
       return pattern.test(value)&&value.includes(' '+accountName+' ')&&/#\d+\b/.test(value);
@@ -217,7 +217,7 @@
   }
   function parseTodayRow(element,accountName,sport){
     const value=clean(text(element)),mint=Number(value.match(/#(\d+)\b/)?.[1]);
-    const head=value.match(/^(GENERAL|COMMON|UNCOMMON|RARE|EPIC|LEGENDARY)\s+Player\s+(\S+)\s+(.+)$/i);
+    const head=value.match(/^(GENERAL|COMMON|UNCOMMON|RARE|EPIC|LEGENDARY)\s+(?:Player|Fighter|Team)\s+(\S+)\s+(.+)$/i);
     if(!head||!Number.isSafeInteger(mint))return null;
     const marker=' '+accountName+' ',at=head[3].indexOf(marker);if(at<1)return null;
     const before=head[3].slice(0,at).trim(),parts=before.split(/\s+/),position=parts.pop()||'',name=parts.join(' ').trim();
