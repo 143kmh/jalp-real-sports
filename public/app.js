@@ -164,6 +164,11 @@ function renderPack(pack,key){
   return `<div class="pack-result"><details class="job-cards" data-detail-key="${esc(key)}"><summary>${esc(leagueName(pack.sport||'nfl'))} · ${pack.cardCount??pack.cards?.length??0} карт / бустеров · ${fmt(pack.cost??0)} Rax${pack.id?` · пак №${esc(pack.id)}`:''}</summary>${(pack.cards||[]).map(c=>{const listing=records.find(r=>r.cardId===c.id),protectedCard=state.settings?.protectedCardIds.includes(c.id);return `<div class="received-card"><span>${esc(c.rarity)} · ${esc(c.label)}${c.mint!=null?` · #${esc(c.mint)}`:''}${listing?`<br><span class="listing-state">${esc(labels[listing.status]||listing.status)}${listing.durationHours?' · 24ч':''}${listing.mode?` · ${esc(listing.mode)}`:''}${listing.price!=null?` · ${fmt(listing.price)} Rax`:listing.priceDisplay?` · ${esc(listing.priceDisplay)}`:''}${listing.message?` · ${esc(listing.message)}`:''}</span>`:''}</span><button class="card-protect" data-protect-card="${c.id}" ${state.busy?'disabled':''}>${protectedCard?'Снять защиту':'Защитить'}</button></div>`;}).join('')}${pack.listingError?`<p class="listing-error">${esc(pack.listingError)}</p>`:''}${pack.summaryText?`<p class="pack-summary">${esc(pack.summaryText)}</p>`:''}</details></div>`;
 }
 
+function renderBoostRecords(item,jobId){
+  const records=item.boosts||[];if(!records.length)return '';
+  const label={success:'Готово',skipped:'Пропущено',warning:'Предупреждение',error:'Ошибка',uncertain:'Неизвестно',running:'Выполняется'};
+  return `<details class="recovery-log" data-detail-key="${esc(jobId+':boosts:'+item.accountId)}"><summary>Бустеры · ${records.length}</summary>${records.map(r=>`<p><b>${esc(r.playerName||leagueName(r.sport))}</b>${r.position?' · '+esc(r.position):''}${r.mint?' · #'+esc(r.mint):''} · ${esc(label[r.status]||r.status)}${r.rarityLabel?' · '+esc(r.rarityLabel):''}${r.message?' · '+esc(r.message):''}</p>`).join('')}</details>`;
+}
 function renderRecovery(item,jobId){
   const warnings=item.generalProgress?.warnings||[];
   return warnings.length? `<details class="recovery-log" data-detail-key="${esc(jobId+':recovery:'+item.accountId)}"><summary>Сбои и восстановление · ${warnings.length}</summary>${warnings.map(w=>`<p><span class="mono">${esc(new Date(w.at).toLocaleTimeString('ru-RU'))}</span> ${esc(w.message)}</p>`).join('')}</details>` : '';
@@ -278,7 +283,7 @@ function render() {
   updateHTML('jobs',jobs.length ? jobs.map(job => {
     const title = job.type==='boosters'?'Бустеры · первые 25':job.type==='player-check'?`${leagueName(job.sport)} · Проверка Player packs без покупки`:job.type==='player'?`${leagueName(job.sport)} · Player packs · все карты сохраняются`:job.type==='max'?`Максимум · ${job.settings.priority.map(leagueName).join(' → ')}`:job.type === 'open' ? `${leagueName(job.sport)} · General Pack` : job.type==='check'?`Проверка ${leagueName(job.sport)} · без покупки`:'Обновление аккаунтов';
     const date = new Date(job.createdAt).toLocaleString('ru-RU');
-    return `<div class="job"><div class="job-head"><b>${esc(title)}</b><small>${esc(date)}</small></div>${job.message ? `<p class="card-error">${esc(job.message)}</p>` : ''}${job.items.map(item => `<div class="job-item"><span class="job-state ${esc(item.status)}">${esc(labels[item.status] || item.status)}</span><div><b>${esc(item.accountName)}</b> ${esc(item.message || '')}${renderRecovery(item,job.id)}${(item.packs||(item.pack?[item.pack]:[])).map((pack,i)=>renderPack(pack,job.id+':'+item.accountName+':'+i)).join('')}</div></div>`).join('')}</div>`;
+    return `<div class="job"><div class="job-head"><b>${esc(title)}</b><small>${esc(date)}</small></div>${job.message ? `<p class="card-error">${esc(job.message)}</p>` : ''}${job.items.map(item => `<div class="job-item"><span class="job-state ${esc(item.status)}">${esc(labels[item.status] || item.status)}</span><div><b>${esc(item.accountName)}</b> ${esc(item.message || '')}${renderRecovery(item,job.id)}${renderBoostRecords(item,job.id)}${(item.packs||(item.pack?[item.pack]:[])).map((pack,i)=>renderPack(pack,job.id+':'+item.accountName+':'+i)).join('')}</div></div>`).join('')}</div>`;
   }).join('') : '<p class="empty-inline">Нет операций для выбранного фильтра.</p>');
   $('jobs').querySelectorAll('details').forEach(detail=>{if(openedDetails.includes(detail.dataset.detailKey))detail.open=true;});
   $('cancel-job').hidden = !state.busy || !state.jobs.some(j => ['running','queued'].includes(j.status));
@@ -289,6 +294,7 @@ function render() {
   renderSelection();
   renderRules();
   renderPlayerPacks();
+  renderBoosters();
 }
 
 async function sync() {
