@@ -24,7 +24,7 @@ async function fixture(t){
 }
 
 test('launch uses a separate persistent profile and pipe, with sandbox/TLS protections intact',()=>{
-  const options=launchOptions('chrome.exe','app/data/browser-profile','headless');assert.equal(options.headless,true);assert.equal(options.pipe,true);assert.equal(options.userDataDir,'app/data/browser-profile');
+  const options=launchOptions('chrome.exe','app/data/browser-profile','headless');assert.equal(options.headless,false);assert.equal(options.pipe,true);assert.equal(options.userDataDir,'app/data/browser-profile');
   assert.ok(options.args.every(arg=>!arg.includes('no-sandbox')&&!arg.includes('ignore-certificate')&&!arg.includes('remote-debugging-port')&&!arg.includes('disable-web-security')));assert.equal(launchOptions('chrome.exe','profile','visible').headless,false);assert.throws(()=>launchOptions('chrome.exe','profile','bad'));
 });
 test('Chrome discovery uses exact installation paths, not user browsing profiles',async()=>{
@@ -37,19 +37,17 @@ test('start and stop use only the owned process, preserve profile and persist au
   await f.service.stop();assert.equal(f.closed(),1);assert.equal(f.service.autoStart,false);assert.equal(f.service.running,false);
   assert.equal(JSON.parse(await fs.readFile(f.service.preferenceFile)).autoStart,false);
 });
-test('visibility can be queued mid-task and applies after boundary, retaining the same profile',async t=>{
-  const f=await fixture(t);await f.service.start('headless');await f.service.requestVisibility(true,true);
-  assert.equal(f.service.status().pendingVisibility,true);assert.equal(f.launches.length,1);assert.equal(f.service.mode,'headless');
-  await f.service.applyVisibility();assert.equal(f.launches.length,2);assert.equal(f.launches[1].headless,false);assert.equal(f.launches[0].userDataDir,f.launches[1].userDataDir);assert.equal(f.service.status().pendingVisibility,false);assert.equal(f.service.autoStart,true);
+test('legacy headless callers are migrated to the same visible profile',async t=>{
+  const f=await fixture(t);await f.service.start('headless');
+  assert.equal(f.launches[0].headless,false);assert.equal(f.service.mode,'visible');
+  await f.service.requestVisibility(true,true);await f.service.applyVisibility();assert.equal(f.launches.length,1);assert.equal(f.service.status().pendingVisibility,false);
 });
-test('toggling visibility back before boundary cancels a pending restart',async t=>{
-  const f=await fixture(t);await f.service.start('headless');await f.service.requestVisibility(true,true);await f.service.requestVisibility(false,true);await f.service.applyVisibility();assert.equal(f.launches.length,1);
+test('headless mode cannot be enabled even by an old panel',async t=>{
+  const f=await fixture(t);await f.service.start();await assert.rejects(f.service.requestVisibility(false,true),/без окна отключена/);assert.equal(f.launches.length,1);assert.equal(f.service.mode,'visible');
 });
-test('failed queue wake leaves visibility retryable rather than stuck switching',async t=>{
-  const f=await fixture(t);await f.service.start('headless');await f.service.requestVisibility(true,true);
-  const original=f.service.api;f.service.api=async()=>{throw Error('offline');};
-  await assert.rejects(f.service.applyVisibility(),/offline/);assert.equal(f.service.switching,false);assert.equal(f.service.status().pendingVisibility,true);
-  f.service.api=original;await f.service.applyVisibility();assert.equal(f.service.mode,'visible');assert.equal(f.service.status().pendingVisibility,false);
+test('persisted hidden preference migrates to visible while preserving auto-start',async t=>{
+  const f=await fixture(t);await fs.mkdir(path.dirname(f.service.preferenceFile),{recursive:true});await fs.writeFile(f.service.preferenceFile,JSON.stringify({visible:false,autoStart:true}));
+  await f.service.initialize();assert.equal(f.service.preferredMode,'visible');assert.equal(f.service.autoStart,true);assert.equal(JSON.parse(await fs.readFile(f.service.preferenceFile)).visible,true);
 });
 test('closing visible window marks connection offline without killing personal Chrome',async t=>{
   const f=await fixture(t);await f.service.start('visible');f.service.browser.connected=false;f.service.browser.emit('disconnected');assert.equal(f.service.status().connected,false);assert.equal(f.closed(),0);
@@ -60,8 +58,8 @@ test('visible startup restores the owned window and repeated login brings it for
   assert.deepEqual(page.windowCalls[2],{method:'Browser.setWindowBounds',params:{windowId:17,bounds:{windowState:'normal'}}});
   await f.service.start('visible');assert.equal(page.frontCalls,2);assert.equal(f.launches.length,1);
 });
-test('headless startup and readiness polling never focus a window',async t=>{
-  const f=await fixture(t);await f.service.start('headless');await f.service.refresh();assert.equal(f.pages[0].frontCalls,0);assert.equal(f.pages[0].windowCalls.length,0);
+test('visible readiness polling never steals focus again',async t=>{
+  const f=await fixture(t);await f.service.start();const calls=f.pages[0].frontCalls;await f.service.refresh();assert.equal(f.pages[0].frontCalls,calls);assert.equal(calls,1);
 });
 test('same command ID is never delivered twice after a lost execute reply',async t=>{
   const f=await fixture(t);await f.service.start('headless');let sent=0;f.service.realm.message=async message=>{if(message.type==='READY')return {version:'test',ready:true};sent++;throw Error('lost');};
@@ -81,6 +79,26 @@ test('General reset reloads before switch and again after switch, then verifies 
 test('manual login stops before any execution or automatic reload',async t=>{
   const f=await fixture(t);await f.service.start('headless');f.service.realm.message=async()=>({version:'test',requiresAttention:true});
   const result=await f.service.execute({id:'login',action:'open',expiresAt:Date.now()+60000});assert.equal(result.requiresAttention,true);assert.equal(result.uncertain,false);assert.equal(f.pages[0].reloads,0);
+});
+
+test('native purchase 403 stops the queue instead of treating it as a reload-only failure',async t=>{
+  const f=await fixture(t);await f.service.start();
+  const response={url:()=> 'https://web.realapp.com/collectingpacks/general',status:()=>403,request:()=>({method:()=> 'POST',resourceType:()=> 'xhr'})};
+  f.service.realm.message=async message=>{if(message.type==='READY')return {version:'test',ready:true};f.pages[0].emit('response',response);return {ok:false,uncertain:true,message:'No summary'};};
+  const result=await f.service.execute({id:'denied',action:'open',kind:'general',expiresAt:Date.now()+60000});
+  assert.equal(result.requiresAttention,true);assert.match(result.message,/ручная проверка/);assert.equal(f.pages[0].reloads,0);
+});
+
+test('unrelated rejected request cannot mark a purchase as denied',async t=>{
+  const f=await fixture(t);await f.service.start();
+  f.service.realm.message=async message=>{if(message.type==='READY')return {version:'test',ready:true};f.pages[0].emit('response',{url:()=> 'https://web.realapp.com/tracking/web',status:()=>403,request:()=>({method:()=> 'POST',resourceType:()=> 'xhr'})});return {ok:true};};
+  const result=await f.service.execute({id:'not-denied',action:'open',expiresAt:Date.now()+60000});assert.equal(result.ok,true);
+});
+
+test('native 403 during the safe pre-purchase recovery also stops the queue',async t=>{
+  const f=await fixture(t);await f.service.start();let tries=0;
+  f.service.realm.message=async message=>{if(message.type==='READY')return {version:'test',ready:true};if(++tries===1)return {ok:false,uncertain:false,recoverable:true};f.pages[0].emit('response',{url:()=> 'https://web.realapp.com/collectingpacks/general',status:()=>403,request:()=>({method:()=> 'POST',resourceType:()=> 'xhr'})});return {ok:false,uncertain:true};};
+  const result=await f.service.execute({id:'recovery-denied',action:'open',expiresAt:Date.now()+60000});assert.equal(result.requiresAttention,true);assert.equal(tries,2);
 });
 test('transport retains result for reporting, not replay, when server reply is lost',async t=>{
   const f=await fixture(t);await f.service.start('headless');let next=0,executed=0,reports=0;f.service.execute=async()=>{executed++;return {ok:true};};
@@ -123,12 +141,12 @@ test('native login response is captured and saved; failed or external responses 
   await f.service.captureAccount(response());assert.equal(accounts[0].id,'a1');assert.equal(f.service.status().accountCapture.lastName,'Alice');
   await f.service.captureAccount(response('https://other.test/user'));await f.service.captureAccount(response(undefined,401));assert.equal(accounts.length,1);
 });
-test('account onboarding opens only the owned window, then resumes headless in the same profile',async t=>{
+test('account onboarding opens a manual window, then resumes visibly in the same profile',async t=>{
   const f=await fixture(t);assert.equal((await f.service.addAccounts()).addingAccounts,true);const manual=f.service.manualProcess;
   assert.ok(manual.args.includes('--user-data-dir='+f.service.profile));assert.ok(manual.args.every(a=>!a.includes('debugging')&&!a.includes('automation')));assert.equal(manual.options.windowsHide,false);assert.equal(f.launches.length,0);
   await assert.rejects(f.service.finishAccounts(),/закройте окно/i);manual.emit('exit',0);
   await f.service.start('headless');await f.service.saveCapturedAccount({id:'a1',name:'Alice',headers:{'real-auth-info':'test-auth'},lastSessionAt:'now'},f.service.browser);
-  await f.service.finishAccounts();assert.equal(f.service.mode,'headless');assert.equal(f.service.addingAccounts,false);assert.equal(f.service.autoStart,true);assert.equal(f.launches[0].userDataDir,f.service.profile);
+  await f.service.finishAccounts();assert.equal(f.service.mode,'visible');assert.equal(f.service.addingAccounts,false);assert.equal(f.service.autoStart,true);assert.equal(f.launches[0].headless,false);assert.equal(f.launches[0].userDataDir,f.service.profile);
 });
 
 test('cached login is validated with GET /user from observed native auth, once per session',async t=>{

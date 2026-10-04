@@ -14,7 +14,7 @@ export async function findChrome(env=process.env,access=fs.access){
 }
 export function launchOptions(executablePath,profile,mode){
   if(!['visible','headless'].includes(mode))throw new OperationError('Неверный режим служебного браузера.');
-  return {executablePath,userDataDir:profile,headless:mode==='headless',pipe:true,timeout:30000,protocolTimeout:150000,
+  return {executablePath,userDataDir:profile,headless:false,pipe:true,timeout:30000,protocolTimeout:150000,
     defaultViewport:{width:1440,height:1000},handleSIGINT:false,handleSIGTERM:false,handleSIGHUP:false,
     args:['--no-first-run','--no-default-browser-check','--disable-session-crashed-bubble','--window-size=1440,1000']};
 }
@@ -25,19 +25,22 @@ export class OwnedBrowser{
   constructor({root,api,version,onAccount=async()=>{},readProfile=headers=>realRequest({headers},'GET','/user'),launch=options=>puppeteer.launch(options),spawnManual=(file,args,options)=>spawn(file,args,options),detect=findChrome,realmFactory=(...args)=>new OwnedRealm(...args)}){
     Object.assign(this,{root,api,version,onAccount,readProfile,launch,spawnManual,detect,realmFactory});this.profile=path.join(root,'data','browser-profile');this.preferenceFile=path.join(root,'data','browser.json');this.manualProcess=null;
     this.lastCapturedAuth=null;this.profileProbeAuth=null;this.profileProbeAt=0;
-    this.browser=null;this.page=null;this.realm=null;this.mode=null;this.starting=false;this.polling=false;this.wakePending=false;this.activeCommand=null;this.lastReady=null;this.lastError=null;this.autoStart=false;this.preferredMode='headless';this.requestedMode=null;this.switching=false;this.timer=null;this.attempted=new Set();this.available=false;this.report=null;this.network=[];this.addingAccounts=false;this.accountCapture={count:0,lastName:null,lastAt:null,error:null};this.captureQueue=Promise.resolve();
+    this.browser=null;this.page=null;this.realm=null;this.mode=null;this.starting=false;this.polling=false;this.wakePending=false;this.activeCommand=null;this.commandAttention=null;this.lastReady=null;this.lastError=null;this.autoStart=false;this.preferredMode='visible';this.requestedMode=null;this.switching=false;this.timer=null;this.attempted=new Set();this.available=false;this.report=null;this.network=[];this.addingAccounts=false;this.accountCapture={count:0,lastName:null,lastAt:null,error:null};this.captureQueue=Promise.resolve();
   }
   get running(){return Boolean(this.browser?.connected&&this.page&&!this.page.isClosed());}
   status(){return {available:this.available,running:this.running,starting:this.starting,mode:this.mode,connected:this.running&&Boolean(this.lastReady?.version===this.version),loggedIn:Boolean(this.lastReady?.ready&&!this.lastReady?.requiresAttention),requiresAttention:Boolean(this.lastReady?.requiresAttention),autoStart:this.autoStart,error:this.lastError,active:Boolean(this.activeCommand),visible:(this.requestedMode||this.mode||this.preferredMode)==='visible',pendingVisibility:Boolean(this.requestedMode),addingAccounts:this.addingAccounts,manualLogin:Boolean(this.manualProcess),accountCapture:{...this.accountCapture}};}
   async initialize(){
     try{await this.detect();this.available=true;}catch{this.available=false;}
-    try{const pref=JSON.parse(await fs.readFile(this.preferenceFile,'utf8'));this.autoStart=pref.autoStart===true;this.preferredMode=pref.visible===true?'visible':'headless';}catch(error){if(error.code!=='ENOENT')this.lastError='Не удалось прочитать настройки браузера. Автозапуск отключён.';}
+    try{const pref=JSON.parse(await fs.readFile(this.preferenceFile,'utf8'));this.autoStart=pref.autoStart===true;this.preferredMode='visible';if(pref.visible!==true)await this.preference(this.autoStart);}catch(error){if(error.code!=='ENOENT')this.lastError='Не удалось прочитать настройки браузера. Автозапуск отключён.';}
   }
   async preference(autoStart){const data={autoStart,visible:this.preferredMode==='visible'};await fs.mkdir(path.dirname(this.preferenceFile),{recursive:true});await fs.writeFile(this.preferenceFile+'.tmp',JSON.stringify(data));await fs.rename(this.preferenceFile+'.tmp',this.preferenceFile);this.autoStart=autoStart;}
-  async start(mode='headless',{persist=true}={}){
+  async start(mode='visible',{persist=true}={}){
+    // Legacy callers/preferences may request headless; it is no longer launched.
+    if(!['headless','visible'].includes(mode))throw new OperationError('Неверный режим служебного браузера.');
+    mode='visible';
     if(this.manualProcess)throw new OperationError('Закройте обычное окно входа Real, затем нажмите «Готово».');
     if(this.starting||this.polling||this.activeCommand)throw new OperationError('Дождитесь текущего действия браузера.');
-    if(this.running&&this.mode===mode){if(mode==='visible')await this.showWindow();await this.refresh();if(persist){this.preferredMode=mode;await this.preference(this.autoStart||mode==='headless');}return this.status();}
+    if(this.running&&this.mode===mode){await this.showWindow();await this.refresh();if(persist){this.preferredMode=mode;await this.preference(true);}return this.status();}
     this.starting=true;this.lastError=null;
     try{
       await this.close();const executable=await this.detect();this.available=true;await fs.mkdir(this.profile,{recursive:true});
@@ -51,6 +54,11 @@ export class OwnedBrowser{
       this.page.on('response',response=>{
         const request=response.request(),record=networkRecord(response.url(),request.method(),response.status(),request.resourceType(),startedRequests.has(request)?Date.now()-startedRequests.get(request):null);
         if(record){this.network.push(record);this.network=this.network.slice(-200);}
+        const command=this.activeCommand;
+        if(record?.origin==='https://web.realapp.com'&&[401,403].includes(record.status)&&record.method==='POST'&&command&&
+          (command.action==='open'&&record.path==='/collectingpacks/'+(command.kind==='player'?'player':'general')||command.action==='list'&&['/quicklist','/quicklist/preview','/cardmarketplacelistings'].includes(record.path))){
+          this.commandAttention={commandId:command.id,message:'Real отклонил действие ('+record.status+'). Нужна ручная проверка в окне Real; очередь остановлена.'};
+        }
         if(record?.origin==='https://web.realapp.com'&&record.status===200&&record.method==='GET'){
           if(record.path==='/user')this.captureQueue=this.captureQueue.then(()=>this.captureAccount(response,browser)).catch(()=>this.captureError());
           else this.queueProfileProbe(response,browser);
@@ -63,8 +71,8 @@ export class OwnedBrowser{
       if(mode==='visible')await this.showWindow();
       // Never copy cookies/passwords from the user's browsers or HAR into this profile.
       await this.api('hello',{tabId:'owned',version:this.version});await this.refresh();
-      this.timer=setInterval(()=>{if(!this.starting&&!this.polling&&!this.activeCommand)this.refresh().catch(()=>{});},mode==='visible'?5000:30000);this.timer.unref?.();
-      if(persist){this.preferredMode=mode;await this.preference(this.autoStart||mode==='headless');}return this.status();
+      this.timer=setInterval(()=>{if(!this.starting&&!this.polling&&!this.activeCommand)this.refresh().catch(()=>{});},5000);this.timer.unref?.();
+      if(persist){this.preferredMode=mode;await this.preference(true);}return this.status();
     }catch(error){await this.close();this.lastError=error instanceof OperationError?error.message:'Не удалось запустить служебный Chrome. Проверьте, что его профиль не открыт другим экземпляром.';throw new OperationError(this.lastError);}
     finally{this.starting=false;}
   }
@@ -124,13 +132,13 @@ export class OwnedBrowser{
   }
   async finishAccounts(){
     if(this.manualProcess)throw new OperationError('Сначала закройте окно Chrome для входа крестиком. Затем нажмите «Готово» — профиль сохранится.');
-    if(!this.running)await this.start('headless');
+    if(!this.running)await this.start('visible');
     await this.refresh();await this.captureQueue;
     if(!this.status().loggedIn)throw new OperationError('Сначала завершите вход в Real и откройте обычный интерфейс сайта.');
     for(let i=0;i<40&&!this.lastCapturedAuth&&!this.accountCapture.error;i++){await sleep(250);await this.captureQueue;}
     if(this.accountCapture.error)throw new OperationError(this.accountCapture.error);
     if(!this.lastCapturedAuth)throw new OperationError('Real открыт, но аккаунт ещё не сохранён. Подождите загрузки и нажмите «Готово» снова.');
-    this.addingAccounts=false;await this.preference(true);return this.requestVisibility(false);
+    this.addingAccounts=false;await this.preference(true);return this.requestVisibility(true);
   }
   async showWindow(){
     if(!this.running||this.mode!=='visible')return;
@@ -181,6 +189,7 @@ export class OwnedBrowser{
     if(this.attempted.has(command.id))return {ok:false,uncertain:['open','list'].includes(command.action),message:'Команда уже выполнялась; повторная отправка запрещена.'};
     if(command.expiresAt<=Date.now())return {ok:false,message:'Команда устарела до отправки.'};
     let delivered=false;
+    this.commandAttention=null;
     this.activeCommand=command;this.realm.inflight=command;
     try{
       if(['reset','prepare-account'].includes(command.action)){
@@ -204,11 +213,12 @@ export class OwnedBrowser{
       if(command.expiresAt<=Date.now())throw new OperationError('Команда устарела до отправки.');
       this.attempted.add(command.id);if(this.attempted.size>1000)this.attempted.delete(this.attempted.values().next().value);delivered=true;
       let result=await bounded(this.realm.message({type:'EXECUTE',command}),120000);
+      if(this.commandAttention?.commandId===command.id)return {...result,ok:false,requiresAttention:true,message:this.commandAttention.message};
       if(result?.recoverable===true&&result.uncertain===false&&['open','check'].includes(command.action)&&Date.now()<command.expiresAt){
         delivered=false;await this.page.reload({waitUntil:'domcontentloaded'});if(!await this.waitReady())throw new OperationError('Real не загрузился после восстановления.');
         delivered=true;result=await bounded(this.realm.message({type:'EXECUTE',command}),120000);result={...result,recoveryAttempted:true};
-      }return result;
-    }catch(error){return {ok:false,uncertain:delivered&&['open','list'].includes(command.action),requiresAttention:Boolean(error.requiresAttention),message:error instanceof OperationError?error.message:delivered?'Служебная вкладка не ответила. Результат неизвестен.':'Страница Real не готова; действие не отправлено.'};}
+      }return this.commandAttention?.commandId===command.id?{...result,ok:false,requiresAttention:true,message:this.commandAttention.message}:result;
+    }catch(error){return {ok:false,uncertain:delivered&&['open','list'].includes(command.action),requiresAttention:Boolean(error.requiresAttention||this.commandAttention?.commandId===command.id),message:this.commandAttention?.commandId===command.id?this.commandAttention.message:error instanceof OperationError?error.message:delivered?'Служебная вкладка не ответила. Результат неизвестен.':'Страница Real не готова; действие не отправлено.'};}
     finally{this.activeCommand=null;this.realm.inflight=null;}
   }
   async diagnostics(){
@@ -228,7 +238,8 @@ export class OwnedBrowser{
   }
   async requestVisibility(visible,defer=false){
     if(typeof visible!=='boolean')throw new OperationError('Неверное состояние видимости.');
-    this.preferredMode=visible?'visible':'headless';await this.preference(this.autoStart);
+    if(!visible)throw new OperationError('Работа без окна отключена. Real всегда выполняет задачи в отдельном видимом Chrome.');
+    this.preferredMode='visible';await this.preference(this.autoStart);
     if(!this.running){this.requestedMode=null;return this.status();}
     this.requestedMode=this.mode===this.preferredMode?null:this.preferredMode;
     if(!defer)await this.applyVisibility();return this.status();

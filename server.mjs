@@ -21,7 +21,7 @@ await store.load();
 let busy = false;
 let shuttingDown = false;
 let worker = Promise.resolve();
-const APP_VERSION='0.4.1';
+const APP_VERSION='0.4.2';
 const ownedKey=crypto.randomBytes(32).toString('hex');
 const browserState={mode:'owned',lastSeen:0,tabId:null,snapshot:null,version:null};
 const ownedBrowser=new OwnedBrowser({root,version:APP_VERSION,onAccount:async account=>{
@@ -296,6 +296,13 @@ async function createJob(body) {
   if (existing) return existing;
   if (busy||ownedBrowser.starting) throw new Error('Дождитесь окончания текущей задачи или запуска браузера.');
   validateIds(body.accountIds);
+  // Starting any job opens the owned Real window if it was closed/stopped.
+  browserState.mode='owned';
+  if(!ownedBrowser.running){
+    busy=true;
+    try{await ownedBrowser.start('visible');if(!await ownedBrowser.waitReady())throw new OperationError('Real ещё загружается. Дождитесь интерфейса в открытом окне и запустите задачу снова.');}
+    finally{busy=false;}
+  }
   if(body.type==='player'||body.type==='player-check'){
     const quote=playerQuotes.get(body.quoteId);
     if(!quote||quote.expiresAt<Date.now()||body.accountIds.length!==1||body.accountIds[0]!==quote.accountId||body.sport!==quote.sport||JSON.stringify(store.settings.playerPacks.filter(p=>p.accountId===quote.accountId&&p.sport===quote.sport))!==quote.selection)throw new OperationError('Проверьте цены Player packs заново после сохранения выбора.');

@@ -101,7 +101,7 @@ function notice(message, error = false) {
   $('notice').hidden = false;
 }
 
-function usableBrowser(){return state.browser?.connected&&(state.browser.mode!=='owned'||state.browser.loggedIn);}
+function usableBrowser(){const owned=state.browser?.owned;if(state.browser?.mode==='owned'&&owned?.available&&!owned.running&&!owned.starting&&!owned.manualLogin)return true;return state.browser?.connected&&(state.browser.mode!=='owned'||state.browser.loggedIn);}
 function connectedAccounts(){return state.accounts.filter(a=>a.browserSession===true);}
 function canBuy(a, league = sport, strict = false) {
   if(!a.browserSession)return false;
@@ -208,9 +208,8 @@ function renderSelection() {
 
 function renderOwnedBrowser(){
   const owned=state.browser?.owned||{};
-  $('owned-status').textContent=owned.manualLogin?'Обычное окно входа открыто. Войдите вручную, закройте окно и нажмите «Готово» в разделе «Аккаунты».':owned.starting?'Запуск браузера…':owned.running?(owned.mode==='headless'?'Без окна':'Окно открыто')+' · '+(owned.loggedIn?'Real готов':owned.error||'Ожидается вход / загрузка Real'):owned.error||'Браузер остановлен';
-  if(!sending)$('owned-visible').checked=!!owned.visible;$('owned-visible').disabled=!!owned.starting||sending;
-  $('visibility-hint').textContent=owned.pendingVisibility?'Смена видимости ожидает завершения текущего пака и листинга.':owned.autoStart?'Служебный браузер запускается вместе с приложением. Видимость меняется между паками.':'Без галочки Chrome работает без окна. Смена режима во время задачи применяется после текущего пака и листинга.';
+  $('owned-status').textContent=owned.manualLogin?'Обычное окно входа открыто. Войдите вручную, закройте окно и нажмите «Готово» в разделе «Аккаунты».':owned.starting?'Открывается отдельное окно Real…':owned.running?'Окно Real открыто · '+(owned.loggedIn?'Real готов':owned.error||'Ожидается вход / ручная проверка Real'):owned.error||'Окно Real откроется при запуске задачи';
+  $('visibility-hint').textContent='Все задачи выполняются в отдельном видимом окне Chrome. Держать Real в Helium не нужно. Не закрывайте окно Real во время задачи; при ручной проверке очередь остановится.';
   for(const id of ['owned-start','owned-login','owned-stop'])$(id).disabled=state.busy||sending||owned.starting||(id==='owned-stop'&&!owned.running);
   for(const id of ['add-account','empty-add-account','finish-accounts'])$(id).disabled=state.busy||sending||owned.starting;
   $('finish-accounts').hidden=!owned.addingAccounts;
@@ -379,13 +378,12 @@ $('finish-accounts').addEventListener('click',()=>controlOwned('finish-accounts'
 async function controlOwned(action,extra={}){
   if(sending)return;sending=true;render();
   try{const result=await api('owned-browser',{action,...extra});if(state.browser){state.browser.owned=result.owned;state.browser.mode='owned';}
-    notice(action==='add-accounts'?'Открыто обычное окно Chrome без автоматизации входа. Войдите, закройте окно и нажмите «Готово».':action==='finish-accounts'?'Добавление завершено. Браузер работает без окна. Обновите цены перед запуском.':action==='visibility'?(result.owned.pendingVisibility?'Видимость изменится после текущего пака и листинга.':'Режим видимости применён.'):action==='stop'?'Служебный браузер остановлен.':result.owned.loggedIn?'Служебный браузер готов. Можно запускать задачи.':'Браузер запущен. Войдите в Real через «Добавить аккаунты».');
+    notice(action==='add-accounts'?'Открыто обычное окно Chrome без автоматизации входа. Войдите, закройте окно и нажмите «Готово».':action==='finish-accounts'?'Аккаунт добавлен. Real работает в отдельном видимом окне. Обновите цены перед запуском.':action==='stop'?'Служебный браузер остановлен.':result.owned.loggedIn?'Служебный браузер готов. Можно запускать задачи.':'Окно Real открыто. Войдите через «Добавить аккаунты» или завершите ручную проверку сайта.');
   }catch(error){notice(error.message,true);}finally{sending=false;await sync();}
 }
-$('owned-start').addEventListener('click',()=>controlOwned($('owned-visible').checked?'visible':'headless'));
+$('owned-start').addEventListener('click',()=>controlOwned('visible'));
 $('owned-login').addEventListener('click',()=>controlOwned('visible'));
 $('owned-stop').addEventListener('click',()=>controlOwned('stop'));
-$('owned-visible').addEventListener('change',()=>controlOwned('visibility',{visible:$('owned-visible').checked}));
 $('diagnostic-export').addEventListener('click',async()=>{
   if(sending)return;sending=true;render();
   try{const response=await fetch('/api/owned-diagnostics',{method:'POST',headers:{'x-local-token':token,'content-type':'application/json'},body:'{}'});

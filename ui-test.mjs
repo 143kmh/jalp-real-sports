@@ -94,12 +94,13 @@ test('recovery history escapes errors rather than rendering Real content as mark
 test('owned browser login is required before purchasing even if transport is connected',()=>{
   const f=fixture();f.run("state.settings={generalResilience:true,priority:['nfl']};state.browser={mode:'owned',connected:true,loggedIn:false};");assert.equal(f.run("Boolean(canMax({id:'a',browserSession:true}))"),false);f.run('state.browser.loggedIn=true');assert.equal(f.run("Boolean(canMax({id:'a',browserSession:true}))"),true);assert.equal(f.run("Boolean(canMax({id:'legacy',browserSession:false}))"),false);
 });
-test('visibility remains usable during a task while browser lifecycle buttons are disabled',()=>{
-  const f=fixture();f.run("state.busy=true;state.browser={owned:{running:true,mode:'headless',visible:true,pendingVisibility:true,loggedIn:true}};renderOwnedBrowser();");
-  assert.equal(f.elements.get('owned-visible').disabled,false);assert.equal(f.elements.get('owned-visible').checked,true);
+test('visible-only browser explains the window requirement during tasks',()=>{
+  const f=fixture();f.run("state.busy=true;state.browser={owned:{running:true,mode:'visible',visible:true,loggedIn:true}};renderOwnedBrowser();");
+  assert.equal(f.elements.has('owned-visible'),false);
   for(const id of ['owned-start','owned-login','owned-stop'])assert.equal(f.elements.get(id).disabled,true);
-  assert.equal(f.elements.get('diagnostic-export').disabled,false);assert.match(f.elements.get('visibility-hint').textContent,/текущего пака/);
+  assert.equal(f.elements.get('diagnostic-export').disabled,false);assert.match(f.elements.get('visibility-hint').textContent,/видимом окне/);
 });
-test('visibility keeps its optimistic checked state during browser restart',()=>{
-  const f=fixture();f.elements.get('owned-visible').checked=true;f.run("sending=true;state.browser={owned:{visible:false,running:true}};renderOwnedBrowser();");assert.equal(f.elements.get('owned-visible').checked,true);
+test('linked accounts can launch jobs that open a stopped browser automatically',()=>{
+  const f=fixture();f.run("state.settings={priority:['nfl']};state.browser={mode:'owned',connected:false,loggedIn:false,owned:{available:true,running:false}};");assert.equal(f.run("Boolean(canMax({browserSession:true}))"),true);
+  f.run('state.browser.owned.manualLogin=true');assert.equal(f.run("Boolean(canMax({browserSession:true}))"),false);
 });
