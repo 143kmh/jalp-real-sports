@@ -13,6 +13,14 @@ test('UI has exactly five working sections and unique control IDs',()=>{
   for(const section of ['accounts','player','general','application','boosters'])assert.ok(ids.includes('view-'+section));
   for(const match of script.matchAll(/\$\('([^']+)'\)/g))assert.ok(ids.includes(match[1]),'Missing control '+match[1]);
 });
+test('booster workspace exposes first-25, boost-all and Legendary controls',()=>{
+  for(const id of ['booster-account','booster-sport','booster-all','booster-no-legendary','booster-load','booster-owned','booster-selected','booster-run'])assert.ok(ids.includes(id));
+  assert.match(html,/Забустить всех играющих сегодня/);
+  assert.match(html,/Не применять Legendary/);
+  assert.match(html,/Запустить первые 25/);
+  assert.match(script,/type:'boosters'/);
+  assert.match(script,/booster-owned/);
+});
 test('scenario recorder controls are present and use explicit start/stop endpoints',()=>{
   for(const id of ['recorder-name','recorder-start','recorder-stop','recorder-status'])assert.ok(ids.includes(id));
   assert.match(script,/recorder\/start/);assert.match(script,/recorder\/stop/);
