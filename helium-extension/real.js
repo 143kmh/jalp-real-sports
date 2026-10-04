@@ -51,12 +51,13 @@
   }
   async function accountId(command){
     if(humanInterrupted)return null;
-    const nav=sidebar(),id=avatarId(nav);
-    if(id)return id;
+    const nav=sidebar();
+    // Avatar URLs are presentation data and can be stale or unrelated to the
+    // currently authenticated account. Only reuse an identity that this exact
+    // command already confirmed from Settings / Log out.
     if(identity?.commandId===command.id)return identity.mark===profileMark(nav)?identity.id:null;
     if(identityAttempted===command.id)return null;
     identityAttempted=command.id;
-    // Letter avatars contain no ID. Confirm the full username in the official Settings / Log out row.
     await settings();
     const name=logoutName();
     if(name!==command.accountName)return null;
@@ -197,7 +198,7 @@
   }});
   function snapshot(){
     const body=document.body.innerText;
-    let id=null,navPresent=false;try{const nav=sidebar();navPresent=true;id=avatarId(nav)||identity?.id||null;}catch{}
+    let id=null,navPresent=false;try{sidebar();navPresent=true;id=identity?.id||null;}catch{}
     const controls=[...document.querySelectorAll('button,a,input,[role="button"],img,svg')].filter(visible).map(e=>{
       const r=e.getBoundingClientRect();
       return {tag:e.tagName,text:text(e).slice(0,150),title:e.getAttribute('title'),aria:e.getAttribute('aria-label'),src:e.getAttribute('src'),class:e.getAttribute('class'),x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)};
