@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { publicAccount, verifyAccount, getPackInfo,getPlayerPackInfo,getOwnedPackPlayers, getLeagueCatalog,getPackHistory,searchPlayers,getOwnedUfcFighters,LEAGUES,OperationError } from './core.mjs';
+import { publicAccount, verifyAccount, getPackInfo,getPlayerPackInfo,getOwnedPackPlayers,getOwnedBoosterPlayers, getLeagueCatalog,getPackHistory,searchPlayers,getOwnedUfcFighters,LEAGUES,OperationError } from './core.mjs';
 import { Store } from './storage.mjs';
 import { CommandNotifier } from './command-notifier.mjs';
 import {validateSettings,recoverNewPack,publicCard,preparePackQuickList,runMaximum} from './automation.mjs';
@@ -11,6 +11,7 @@ import {visitGeneral,scheduleGeneral,requiresGeneralAttention} from './general-r
 import {NativeBrowser as OwnedBrowser} from './native-browser.mjs';
 import {diagnosticArchive,scenarioArchive} from './diagnostics.mjs';
 import {hasBrowserSession,requireBrowserSession,mergeBrowserAccount} from './browser-accounts.mjs';
+import {BOOST_SPORTS,desiredRarity,rarityFallback,statPriority,findConfiguredTarget} from './boosters.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.REAL_MANAGER_PORT || 5127);
@@ -42,7 +43,7 @@ const commandNotifier=new CommandNotifier();
 
 function rejectBrowserCommand(id,pending,message){
   clearTimeout(pending.timer);clearInterval(pending.watchdog);browserCommands.delete(id);
-  const uncertain=Boolean(pending.purchaseStarted||pending.listingStarted);
+  const uncertain=Boolean(pending.purchaseStarted||pending.listingStarted||pending.boosterStarted);
   pending.reject(Object.assign(new OperationError(message,uncertain),{
     chargePossible:Boolean(pending.purchaseStarted),
     cancelled:true,
@@ -62,14 +63,14 @@ async function saveJobHistory(){
   try{await store.saveHistory();}catch{throw Object.assign(new OperationError('Не удалось сохранить операции на диск. Покупки остановлены.'),{code:'STORAGE',requiresAttention:true});}
 }
 async function browserCommand(action,payload={}){
-  if(browserState.mode==='owned'&&['open','check','reset'].includes(action))await ownedBrowser.applyVisibility();
+  if(browserState.mode==='owned'&&['open','check','reset','boost-scan','boost'].includes(action))await ownedBrowser.applyVisibility();
   if(!browserConnected())throw Object.assign(new OperationError('Браузер отключён. Запустите служебный Chrome в разделе «Приложение».'),{requiresAttention:true});
   const command={id:crypto.randomUUID(),action,...payload,expiresAt:Date.now()+180000};
   return new Promise((resolve,reject)=>{
     const pending={command,claimed:false,resolve,reject};
     pending.timer=setTimeout(()=>{
       clearInterval(pending.watchdog);browserCommands.delete(command.id);
-      reject(Object.assign(new OperationError('Браузер не завершил действие.',pending.claimed&&['open','list'].includes(action)),{chargePossible:Boolean(pending.purchaseStarted)}));
+      reject(Object.assign(new OperationError('Браузер не завершил действие.',Boolean(pending.boosterStarted||pending.claimed&&['open','list'].includes(action))),{chargePossible:Boolean(pending.purchaseStarted)}));
     },180000);
     pending.watchdog=setInterval(()=>{
       if(browserState.mode==='owned'&&!browserConnected()){
