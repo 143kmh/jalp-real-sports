@@ -1,7 +1,8 @@
 const token = document.querySelector('meta[name="local-token"]').content;
 const $ = id => document.getElementById(id);
 const selected = new Set();
-let state = { accounts: [], jobs: [], busy: false };
+const UI_VERSION='0.4.4';
+let state = { accounts: [], jobs: [], busy: false, runtimeVersion:null };
 let sport = 'nfl';
 let timer;
 let sending = false;
@@ -221,10 +222,11 @@ function renderOwnedBrowser(){
 function renderRecorder(){
   const recorder=state.recorder||{active:false};
   const owned=state.browser?.owned||{};
-  $('recorder-status').textContent=recorder.active?`Запись идёт: ${recorder.name} · с ${new Date(recorder.startedAt).toLocaleTimeString('ru-RU')}. Выполните сценарий вручную в окне Real.`:'Запись не запущена.';
-  $('recorder-name').disabled=recorder.active||state.busy||sending;
-  $('recorder-start').disabled=recorder.active||state.busy||sending||!state.browser?.connected||!state.browser?.loggedIn||owned.starting;
-  $('recorder-stop').disabled=!recorder.active||sending;
+  const mismatch=state.runtimeVersion!==UI_VERSION;
+  $('recorder-status').textContent=mismatch?`Backend ${state.runtimeVersion?'v'+state.runtimeVersion:'не определён'}; для Recorder нужен полный перезапуск Real Manager до v${UI_VERSION}.`:recorder.active?`Запись идёт: ${recorder.name} · с ${new Date(recorder.startedAt).toLocaleTimeString('ru-RU')}. Выполните сценарий вручную в окне Real.`:'Запись не запущена.';
+  $('recorder-name').disabled=mismatch||recorder.active||state.busy||sending;
+  $('recorder-start').disabled=mismatch||recorder.active||state.busy||sending||!state.browser?.connected||!state.browser?.loggedIn||owned.starting;
+  $('recorder-stop').disabled=mismatch||!recorder.active||sending;
 }
 function render() {
   $('browser-status').textContent=state.browser?.mode==='owned'?'Выбран служебный браузер. Helium не используется.':state.browser?.connected?'Подключён · действия выполняются в обычной вкладке Real':state.browser?.version?'Обновите расширение до версии 0.3.9 и подключите заново':'Расширение не подключено';
@@ -240,6 +242,7 @@ function render() {
   $('connection-dot').classList.toggle('connected',!!state.browser?.connected);
   $('connection-label').textContent=state.browser?.connected?(state.browser.mode==='owned'?'Браузер бота подключён':'Helium подключён'):'Нет подключения';
   renderOwnedBrowser();
+  $('runtime-version').textContent=state.runtimeVersion?`backend v${state.runtimeVersion}${state.runtimeVersion===UI_VERSION?'':' · нужен перезапуск'}`:'backend ? · нужен перезапуск';
   renderRecorder();
   $('run-state').textContent=state.busy?'Задача выполняется':sending?'Отправка…':'Ожидание';
   $('run-state').classList.toggle('busy',state.busy||sending);
@@ -266,7 +269,14 @@ function render() {
 async function sync() {
   if (stopped) return;
   clearTimeout(timer);
-  try { state = await api('state'); render(); }
+  try {
+    const [next,health]=await Promise.all([
+      api('state'),
+      fetch('/health',{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null),
+    ]);
+    next.runtimeVersion=health?.version||next.version||null;
+    state=next;render();
+  }
   catch { notice('Нет связи с приложением. Запустите его через «Запустить Real Manager.cmd».', true); }
   timer = setTimeout(sync, state.busy||state.browser?.owned?.addingAccounts ? 2000 : 30000);
 }
