@@ -9,7 +9,7 @@ let sending = false;
 let stopped = false;
 let bridgeAvailable=false;
 let connectTimer;
-let settingsDraft=null,settingsDirty=false;
+let settingsDraft=null,settingsDirty=false,boosterDirty=false;
 let searchResults=[];
 let ppResults=[],ppQuote=null;
 let boosterOwned=[];
@@ -156,8 +156,8 @@ function renderBoosters(){
   $('booster-account').disabled=state.busy||sending||!connectedAccounts().length;
   $('booster-sport').disabled=state.busy||sending;
   $('booster-query').disabled=state.busy||sending;
-  $('booster-run').disabled=state.busy||sending||settingsDirty||!usableBrowser()||!accountId||(!settingsDraft.boosterBoostAll&&!selected.length);
-  $('booster-hint').textContent=settingsDirty?'Сохраните правила перед запуском.':!usableBrowser()?'Запустите служебный Chrome и войдите в Real.':settingsDraft.boosterBoostAll?'Будут взяты первые 25 owned игроков из Today\'s players.':'Будут обработаны первые 25 выбранных игроков, которые есть в Today\'s players.';
+  $('booster-run').disabled=state.busy||sending||!usableBrowser()||!accountId||(!settingsDraft.boosterBoostAll&&!selected.length);
+  $('booster-hint').textContent=!usableBrowser()?'Запустите служебный Chrome и войдите в Real.':settingsDirty&&!boosterDirty?'Есть несохранённые общие правила. Сохраните их перед запуском бустеров.':boosterDirty?'Настройки бустеров будут автоматически сохранены перед запуском.':settingsDraft.boosterBoostAll?'Будут взяты первые 25 owned игроков из Today\'s players.':'Будут обработаны первые 25 выбранных игроков, которые есть в Today\'s players.';
 }
 function renderPack(pack,key){
   const records=pack.listings||[],labels={queued:'В очереди Real',listed:'Выставлена',kept:'Оставлена',submitting:'Отправляется',cancelled:'Отменено',uncertain:'Проверьте в Real',error:'Ошибка'};
@@ -340,19 +340,28 @@ $('booster-load').addEventListener('click',async()=>{
   try{const params=new URLSearchParams({accountId:$('booster-account').value});if($('booster-sport').value)params.set('sport',$('booster-sport').value);boosterOwned=(await api('booster-owned?'+params)).players;notice(`Загружено owned игроков: ${boosterOwned.length}.`);}
   catch(e){notice(e.message,true);}finally{sending=false;await sync();}
 });
-$('booster-all').addEventListener('change',()=>{settingsDraft.boosterBoostAll=$('booster-all').checked;editSettings();});
-$('booster-no-legendary').addEventListener('change',()=>{settingsDraft.boosterUseLegendary=!$('booster-no-legendary').checked;editSettings();});
+$('booster-all').addEventListener('change',()=>{settingsDraft.boosterBoostAll=$('booster-all').checked;boosterDirty=true;editSettings();});
+$('booster-no-legendary').addEventListener('change',()=>{settingsDraft.boosterUseLegendary=!$('booster-no-legendary').checked;boosterDirty=true;editSettings();});
 $('booster-owned').addEventListener('change',e=>{
   if(state.busy||sending)return;const key=e.target.dataset.boosterToggle||e.target.dataset.boosterRarity;if(!key)return;
   const [sport,rawId]=key.split(':'),entityId=Number(rawId),player=boosterOwned.find(p=>p.sport===sport&&Number(p.entityId)===entityId);if(!player)return;
   settingsDraft.boosterTargets??=[];let index=settingsDraft.boosterTargets.findIndex(t=>t.accountId===player.accountId&&t.sport===sport&&Number(t.entityId)===entityId);
   if(e.target.dataset.boosterToggle!==undefined){if(e.target.checked&&index<0)settingsDraft.boosterTargets.push({accountId:player.accountId,sport,entityId,name:player.name,position:player.position||'',desiredRarity:settingsDraft.boosterUseLegendary?5:4});if(!e.target.checked&&index>=0)settingsDraft.boosterTargets.splice(index,1);}
   else if(index>=0)settingsDraft.boosterTargets[index].desiredRarity=Number(e.target.value);
-  editSettings();
+  boosterDirty=true;editSettings();
 });
 $('booster-run').addEventListener('click',async()=>{
-  if(state.busy||sending||settingsDirty)return;const accountId=$('booster-account').value;if(!accountId)return;sending=true;render();
-  try{await api('jobs',{type:'boosters',accountIds:[accountId],requestId:crypto.randomUUID()});wakeBrowser();navigate('boosters');notice('Запущено применение бустеров к первым 25 подходящим игрокам.');}
+  if(state.busy||sending)return;
+  const accountId=$('booster-account').value;
+  if(!accountId){notice('Выберите аккаунт для бустеров.',true);return;}
+  if(!usableBrowser()){notice('Запустите служебный Chrome и войдите в Real.',true);return;}
+  if(settingsDirty&&!boosterDirty){notice('Есть несохранённые общие правила. Сохраните их перед запуском бустеров.',true);return;}
+  if(!settingsDraft.boosterBoostAll&&!(settingsDraft.boosterTargets||[]).some(t=>t.accountId===accountId)){notice('Включите «Забустить всех» или выберите хотя бы одного игрока.',true);return;}
+  sending=true;render();
+  try{
+    if(boosterDirty){const saved=await api('settings',settingsDraft);state.settings=saved.settings;settingsDraft=structuredClone(saved.settings);settingsDirty=false;boosterDirty=false;$('settings-status').textContent='Настройки бустеров сохранены автоматически.';}
+    await api('jobs',{type:'boosters',accountIds:[accountId],requestId:crypto.randomUUID()});wakeBrowser();navigate('boosters');notice('Запущено применение бустеров к первым 25 подходящим игрокам.');
+  }
   catch(e){notice(e.message,true);}finally{sending=false;await sync();}
 });
 async function loadPackPlayers(search){
@@ -414,7 +423,7 @@ $('pricing-mode').addEventListener('change',()=>{settingsDraft.pricingMode=$('pr
 $('max-packs').addEventListener('input',()=>{settingsDraft.maxPacks=Number($('max-packs').value);editSettings();});
 $('protected-card-ids').addEventListener('input',()=>{settingsDraft.protectedCardIds=$('protected-card-ids').value.split(/[,;\s]+/).filter(Boolean).map(Number);editSettings();});
 $('save-settings').addEventListener('click',async()=>{
-  try{await api('settings',settingsDraft);settingsDirty=false;$('settings-status').textContent='Правила сохранены. Применяются к следующим задачам.';await sync();}catch(e){notice(e.message,true);}
+  try{await api('settings',settingsDraft);settingsDirty=false;boosterDirty=false;$('settings-status').textContent='Правила сохранены. Применяются к следующим задачам.';await sync();}catch(e){notice(e.message,true);}
 });
 $('protected-players').addEventListener('click',e=>{const b=e.target.closest('[data-unprotect]');if(!b)return;settingsDraft.protectedPlayers.splice(Number(b.dataset.unprotect),1);editSettings();});
 $('protect-owned-ufc').addEventListener('click',async()=>{
