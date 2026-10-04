@@ -27,6 +27,7 @@ test('owned booster players are deduplicated by entity and retain positions',asy
   const pass={userId:'owner',sport:'nfl',season:2026,entityType:'player',entityId:7,label:'Lamar Jackson',entity:{position:'QB'}};
   const request=async(_a,_method,path)=>{
     if(path==='/user')return {user:{id:'owner',userName:'Alice',virtualCurrencyBalance:0}};
+    if(path==='/collecting/owner/info')return {info:{sportSeasonMap:{nfl:[{id:2026}]}}};
     if(path.startsWith('/userpasses/'))return {passes:[pass,pass]};
     throw new Error('unexpected '+path);
   };
